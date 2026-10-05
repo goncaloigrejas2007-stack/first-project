@@ -6,6 +6,10 @@ A personal finance dashboard built with Python and Streamlit. Create an account,
 ![Streamlit](https://img.shields.io/badge/Streamlit-app-red?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
+## Screenshots
+
+Screenshots can be added to [`docs/screenshots/`](docs/screenshots/).
+
 ---
 
 ## ✨ Features
@@ -74,17 +78,17 @@ python -m venv .venv
 
 3. **Install the dependencies**
 ```bash
-python3 -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
 4. **Run the app**
 ```bash
-python3 -m streamlit run streamlit_app.py
+streamlit run streamlit_app.py
 ```
 
 5. **Open it in your browser** at `http://localhost:8501`
 
-> On macOS, `pip` and `streamlit` are often not on the PATH. Using `python3 -m pip` and `python3 -m streamlit` avoids that problem. On Windows, use `python` instead of `python3`.
+> If `pip` or `streamlit` is not on your PATH, use `python -m pip` and `python -m streamlit` instead.
 
 The databases are created automatically on first run. To use the app again later, activate the virtual environment first (`source .venv/bin/activate`), then run the last command.
 
@@ -106,10 +110,16 @@ The databases are created automatically on first run. To use the app again later
 
 ```
 first-project/
-├── streamlit_app.py          # The app: UI, finance data and charts
+├── streamlit_app.py          # Streamlit user interface
 ├── auth_manager.py           # Registration, login and user settings
+├── db.py                     # Finance database schema and CRUD operations
+├── analytics.py              # Budget summaries, forecasts and exports
+├── theme.py                  # Theme palettes and chart styling
 ├── requirements.txt          # Python dependencies
-├── test_smoke.py             # Smoke test using Streamlit's AppTest
+├── requirements-dev.txt      # Development and test dependencies
+├── test_*.py                 # Authentication, analytics and UI tests
+├── .github/workflows/ci.yml  # Tests on pushes and pull requests
+├── docs/screenshots/         # Project screenshots
 ├── .streamlit/config.toml    # Streamlit defaults (accent color and font)
 ├── .gitignore                # Local files and databases to ignore
 ├── LICENSE                   # MIT license
@@ -181,6 +191,8 @@ cp finance_data.db finance_data.db.backup
 
 - All data stays on the machine that runs the app. Nothing is sent to any external service.
 - Passwords are stored as bcrypt hashes, never as plain text.
+- Database queries are parameterized, and finance records are scoped to each user.
+- `.db` files and `.env` files are ignored by git.
 - Login errors are generic, so they do not reveal whether a username exists.
 - This is a personal project for local use. It has no rate limiting, no password reset and no session persistence (refreshing the page logs you out). It is not designed to be exposed on the public internet.
 
@@ -188,13 +200,26 @@ cp finance_data.db finance_data.db.backup
 
 ## 🧪 Testing
 
-Run the smoke test with:
+Install development dependencies and run all tests with:
 
 ```bash
-python3 -m unittest test_smoke
+pip install -r requirements-dev.txt
+pytest
 ```
 
-The test starts the app with temporary SQLite databases, registers and logs in a user, checks that a zero amount is rejected, and saves a transaction.
+The tests cover authentication, analytics, and a Streamlit smoke test. Database tests use temporary SQLite files.
+
+---
+
+## Development notes
+
+This project was developed with the assistance of AI tools, and the code was reviewed by the author.
+
+---
+
+## Nota em português
+
+Projeto desenvolvido com apoio de ferramentas de IA e revisto pelo autor.
 
 ---
 
