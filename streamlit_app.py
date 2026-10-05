@@ -13,7 +13,6 @@ from auth_manager import (
     register_user,
     update_user_settings,
 )
-from llm_manager import get_llm_manager
 
 DB_PATH = Path(__file__).resolve().parent / "finance_data.db"
 DEFAULT_BUDGETS = {
@@ -390,8 +389,6 @@ init_db()
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = ""
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
 
 
 def show_auth_page():
@@ -448,17 +445,15 @@ with st.sidebar:
     settings = get_user_settings(user_id)
     st.subheader("Settings")
     theme = st.selectbox("Theme", ["light", "dark"], index=["light", "dark"].index(settings.get("theme", "light")))
-    llm_model = st.selectbox("AI model", ["groq"], index=0)
     notifications_enabled = st.checkbox("Enable notifications", value=bool(settings.get("notifications_enabled", 1)))
     if st.button("Save settings"):
-        update_user_settings(user_id, {"theme": theme, "llm_model": llm_model, "notifications_enabled": int(notifications_enabled)})
+        update_user_settings(user_id, {"theme": theme, "notifications_enabled": int(notifications_enabled)})
         st.success("Settings saved")
 
     st.divider()
     if st.button("Logout"):
         st.session_state.user_id = None
         st.session_state.username = ""
-        st.session_state.chat_history = []
         st.rerun()
 
 st.title("💰 Personal Finance Dashboard Pro")
@@ -501,7 +496,7 @@ if not transactions_df.empty:
         st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
 
 st.divider()
-overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, ai_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions", "AI Assistant"])
+overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions"])
 
 with overview_tab:
     st.subheader("📝 Recent transactions")
@@ -798,35 +793,6 @@ with st.sidebar:
                 save_budget(user_id, new_category, 100)
                 st.success("Category added.")
                 st.rerun()
-
-with ai_tab:
-    st.subheader("🤖 Financial AI assistant")
-    llm = get_llm_manager()
-    if llm is None:
-        st.warning("Configure GROQ_API_KEY in environment variables or .env to enable AI assistant.")
-    else:
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        prompt = st.chat_input("Ask anything about your finances...")
-        if prompt:
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            finance_data = {
-                "total_spending": total_spending,
-                "total_income": total_income,
-                "monthly_spending": month_spending,
-                "category_breakdown": expense_df.groupby("category")["amount"].sum().to_dict() if not expense_df.empty else {},
-            }
-            response = llm.get_financial_advice(finance_data)
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
-            with st.chat_message("assistant"):
-                st.markdown(response)
 
 st.divider()
 st.markdown(
