@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Finance Flow Dashboard</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h2>Finance Flow</h2>
+      </div>
+      <div class="user-actions">
+        <span>Olá, {{ user.username }}</span>
+        <a href="/logout">Logout</a>
+      </div>
+    </header>
+
+    <main class="dashboard-shell">
+      <section class="summary-grid">
+        <article class="card summary-card income">
+          <span class="label">Receitas</span>
+          <strong id="income-total">0.00€</strong>
+        </article>
+        <article class="card summary-card expense">
+          <span class="label">Despesas</span>
+          <strong id="expense-total">0.00€</strong>
+        </article>
+        <article class="card summary-card balance">
+          <span class="label">Saldo</span>
+          <strong id="balance-total">0.00€</strong>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <div class="card">
+          <h3>Adicionar movimento</h3>
+          <form method="post" action="/api/transactions" class="transaction-form" id="transaction-form">
+            <div class="grid two-cols">
+              <label>
+                Tipo
+                <select name="type" required>
+                  <option value="income">Receita</option>
+                  <option value="expense">Despesa</option>
+                </select>
+              </label>
+
+              <label>
+                Categoria
+                <input type="text" name="category" placeholder="Ex: Alimentação" required />
+              </label>
+            </div>
+
+            <label>
+              Descrição
+              <input type="text" name="description" placeholder="Ex: Supermercado" required />
+            </label>
+
+            <label>
+              Montante (€)
+              <input type="number" name="amount" step="0.01" min="0.01" required />
+            </label>
+
+            <button type="submit">Guardar</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Movimentos recentes</h3>
+          <ul id="recent-transactions" class="transaction-list"></ul>
+        </div>
+      </section>
+
+      <section class="card assistant-card">
+        <h3>Assistente financeiro</h3>
+        <div id="chat-messages" class="chat-messages">
+          <div class="bubble assistant">Olá! Posso ajudar-te a analisar o teu orçamento e a planear melhor as tuas finanças.</div>
+        </div>
+
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" type="text" placeholder="Pergunta sobre o teu orçamento..." required />
+          <button type="submit">Enviar</button>
+        </form>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

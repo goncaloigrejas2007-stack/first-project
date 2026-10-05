@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Finance Flow - Register</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="auth-page">
+    <main class="auth-box">
+      <div class="brand">
+        <h1>Finance Flow</h1>
+        <p>Cria a tua conta e começa a controlar o teu orçamento</p>
+      </div>
+
+      <form method="post" action="/register" class="auth-form">
+        <label>
+          Username
+          <input type="text" name="username" placeholder="username" required />
+        </label>
+
+        <label>
+          Email
+          <input type="email" name="email" placeholder="you@example.com" required />
+        </label>
+
+        <label>
+          Password
+          <input type="password" name="password" placeholder="••••••••" required />
+        </label>
+
+        <button type="submit">Registar</button>
+      </form>
+
+      <div class="auth-footer">
+        <span>Já tens conta?</span>
+        <a href="/login">Faz login</a>
+      </div>
+    </main>
+  </body>
+</html>

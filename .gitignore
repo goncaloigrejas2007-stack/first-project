@@ -1,0 +1,82 @@
+async function loadSummary() {
+  const res = await fetch('/api/summary');
+  const data = await res.json();
+
+  document.getElementById('income-total').textContent = `${Number(data.income || 0).toFixed(2)}€`;
+  document.getElementById('expense-total').textContent = `${Number(data.expenses || 0).toFixed(2)}€`;
+  document.getElementById('balance-total').textContent = `${Number(data.balance || 0).toFixed(2)}€`;
+
+  const list = document.getElementById('recent-transactions');
+  list.innerHTML = '';
+
+  if (!data.transactions || data.transactions.length === 0) {
+    list.innerHTML = '<li><span>Sem movimentos ainda.</span></li>';
+    return;
+  }
+
+  data.transactions.forEach((item) => {
+    const li = document.createElement('li');
+    li.innerHTML = `
+      <div class="meta">
+        <strong>${item.category}</strong>
+        <span>${item.description}</span>
+        <small>${new Date(item.created_at).toLocaleDateString()}</small>
+      </div>
+      <span class="amount ${item.type === 'income' ? 'income' : 'expense'}">
+        ${item.type === 'income' ? '+' : '-'}${Number(item.amount).toFixed(2)}€
+      </span>
+    `;
+    list.appendChild(li);
+  });
+}
+
+const transactionForm = document.getElementById('transaction-form');
+if (transactionForm) {
+  transactionForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(transactionForm);
+
+    const response = await fetch('/api/transactions', {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      transactionForm.reset();
+      await loadSummary();
+    }
+  });
+}
+
+const chatForm = document.getElementById('chat-form');
+if (chatForm) {
+  chatForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    const chatMessages = document.getElementById('chat-messages');
+    const userBubble = document.createElement('div');
+    userBubble.className = 'bubble user';
+    userBubble.textContent = message;
+    chatMessages.appendChild(userBubble);
+
+    input.value = '';
+
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+
+    const data = await response.json();
+    const assistBubble = document.createElement('div');
+    assistBubble.className = 'bubble assistant';
+    assistBubble.textContent = data.reply;
+    chatMessages.appendChild(assistBubble);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  });
+}
+
+loadSummary();

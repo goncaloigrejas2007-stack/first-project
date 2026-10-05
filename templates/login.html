@@ -1,0 +1,370 @@
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+import requests
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, create_engine, func
+from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
+
+BASE_DIR = Path(__file__).resolve().parent
+DATABASE_URL = f"sqlite:///{BASE_DIR / 'finance_flow.db'}"
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-me")
+ALGORITHM = "HS256"
+API_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+Base = declarative_base()
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    email = Column(String, unique=True, index=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    transactions = relationship("Transaction", back_populates="user")
+    messages = relationship("ChatMessage", back_populates="user")
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(String, nullable=False)  # income or expense
+    category = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="transactions")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String, nullable=False)  # user or assistant
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="messages")
+
+
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI(title="Finance Flow")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(password, hashed_password)
+
+
+def create_access_token(username: str) -> str:
+    payload = {"sub": username, "exp": datetime.utcnow().timestamp() + 86400}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if username is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
+
+
+def get_user_summary(db: Session, user: User):
+    income_result = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(Transaction.user_id == user.id, Transaction.type == "income")
+        .scalar()
+        or 0.0
+    )
+    expense_result = (
+        db.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(Transaction.user_id == user.id, Transaction.type == "expense")
+        .scalar()
+        or 0.0
+    )
+
+    balance = income_result - expense_result
+    recent_transactions = (
+        db.query(Transaction)
+        .filter(Transaction.user_id == user.id)
+        .order_by(Transaction.created_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    return {
+        "income": float(income_result),
+        "expenses": float(expense_result),
+        "balance": float(balance),
+        "transactions": [
+            {
+                "id": item.id,
+                "type": item.type,
+                "category": item.category,
+                "description": item.description,
+                "amount": float(item.amount),
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in recent_transactions
+        ],
+    }
+
+
+def local_ai_response(message: str, summary: dict) -> str:
+    message_lower = message.lower()
+    balance = summary["balance"]
+
+    if "budget" in message_lower or "gasto" in message_lower or "expense" in message_lower:
+        return (
+            f"O teu saldo atual é {balance:.2f}€ . "
+            "Se quiseres manter um orçamento saudável, sugiro reservar cerca de 60% para necessidades, "
+            "20% para poupança e 20% para lazer ou despesas flexíveis."
+        )
+
+    if "resumo" in message_lower or "summary" in message_lower or "estado" in message_lower:
+        return (
+            f"Resumo financeiro: receitas {summary['income']:.2f}€, despesas {summary['expenses']:.2f}€, "
+            f"saldo líquido {balance:.2f}€. Podes continuar a reduzir despesas fixas ou reforçar a poupança."
+        )
+
+    if "poup" in message_lower or "save" in message_lower or "ahorrar" in message_lower:
+        return (
+            "Para poupar melhor, começa por automatizar uma transferência mensal para uma conta de reserva "
+            "e limita os gastos com categorias menos prioritárias."
+        )
+
+    return (
+        "Posso ajudar-te a analisar as tuas finanças: sugerir cortes de despesa, rever o orçamento, "
+        "ou resumir o teu saldo atual. Diz-me o que queres melhorar no teu fluxo financeiro."
+    )
+
+
+def ai_response(message: str, summary: dict) -> str:
+    if not OPENAI_API_KEY:
+        return local_ai_response(message, summary)
+
+    try:
+        payload = {
+            "model": API_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Tu és um assistente financeiro amigável para um utilizador em Portugal. "
+                        "Dá respostas úteis, curtas e práticas sobre orçamento, poupança e gestão de despesas."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Contexto do utilizador: receitas={summary['income']}, despesas={summary['expenses']}, "
+                        f"saldo={summary['balance']}. Pergunta: {message}"
+                    ),
+                },
+            ],
+            "temperature": 0.7,
+        }
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=25,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"].strip()
+    except Exception:
+        return local_ai_response(message, summary)
+
+
+@app.get("/")
+def index():
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login")
+def login_page(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/login")
+def login_post(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+
+    token = create_access_token(user.username)
+    response = RedirectResponse(url="/dashboard", status_code=302)
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax")
+    return response
+
+
+@app.get("/register")
+def register_page(request: Request):
+    return templates.TemplateResponse("register.html", {"request": request})
+
+
+@app.post("/register")
+def register_post(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if db.query(User).filter((User.username == username) | (User.email == email)).first():
+        raise HTTPException(status_code=400, detail="Utilizador ou email já existem")
+
+    user = User(username=username, email=email, password_hash=hash_password(password))
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(user.username)
+    response = RedirectResponse(url="/dashboard", status_code=302)
+    response.set_cookie(key="access_token", value=token, httponly=True, samesite="lax")
+    return response
+
+
+@app.get("/logout")
+def logout():
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("access_token")
+    return response
+
+
+@app.get("/dashboard")
+def dashboard_page(request: Request, user: User = Depends(get_current_user)):
+    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
+
+
+@app.post("/api/transactions")
+def add_transaction(
+    type: str = Form(...),
+    category: str = Form(...),
+    description: str = Form(...),
+    amount: float = Form(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if type not in {"income", "expense"}:
+        raise HTTPException(status_code=400, detail="Tipo inválido")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="O valor deve ser superior a zero")
+
+    transaction = Transaction(
+        user_id=user.id,
+        type=type,
+        category=category,
+        description=description,
+        amount=amount,
+    )
+    db.add(transaction)
+    db.commit()
+    db.refresh(transaction)
+
+    return RedirectResponse(url="/dashboard", status_code=302)
+
+
+@app.get("/api/summary")
+def summary(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    summary_data = get_user_summary(db, user)
+    return JSONResponse(content=summary_data)
+
+
+@app.get("/api/transactions")
+def list_transactions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = (
+        db.query(Transaction)
+        .filter(Transaction.user_id == user.id)
+        .order_by(Transaction.created_at.desc())
+        .all()
+    )
+    return JSONResponse(
+        content=[
+            {
+                "id": item.id,
+                "type": item.type,
+                "category": item.category,
+                "description": item.description,
+                "amount": float(item.amount),
+                "created_at": item.created_at.isoformat(),
+            }
+            for item in items
+        ]
+    )
+
+
+@app.post("/api/chat")
+async def chat_endpoint(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    body = await request.json()
+    message = body.get("message", "").strip()
+    if not message:
+        return JSONResponse({"reply": "Escreve uma pergunta para eu te ajudar."})
+
+    summary = get_user_summary(db, user)
+    reply = ai_response(message, summary)
+
+    db.add(ChatMessage(user_id=user.id, role="user", content=message))
+    db.add(ChatMessage(user_id=user.id, role="assistant", content=reply))
+    db.commit()
+
+    return JSONResponse({"reply": reply})
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
