@@ -583,7 +583,7 @@ with budget_tab:
 
     budget_values = {}
     for _, row in budget_df.iterrows():
-        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", value=float(row["value"]), step=10, key=f"budget_{user_id}_{row['category']}")
+        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", value=float(row["value"]), step=10.0, key=f"budget_{user_id}_{row['category']}")
 
     if st.button("💾 Save budget"):
         for category, value in budget_values.items():
