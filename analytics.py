@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
+from typing import Optional
 
 import pandas as pd
 
 from db import get_budget_df
 
 
-def export_transactions_csv(df):
+def export_transactions_csv(df: pd.DataFrame) -> bytes:
     if df.empty:
         return pd.DataFrame(columns=["date", "amount", "category", "description"]).to_csv(index=False).encode("utf-8")
     return df[["date", "amount", "category", "description"]].copy().assign(
@@ -14,7 +15,7 @@ def export_transactions_csv(df):
     ).to_csv(index=False).encode("utf-8")
 
 
-def calculate_budget_summary(df, user_id=0):
+def calculate_budget_summary(df: pd.DataFrame, user_id: int = 0) -> pd.DataFrame:
     rows = []
     for _, row in get_budget_df(user_id).iterrows():
         category = row["category"]
@@ -36,7 +37,7 @@ def calculate_budget_summary(df, user_id=0):
     return pd.DataFrame(rows)
 
 
-def get_monthly_spending(df):
+def get_monthly_spending(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["month", "amount"])
     monthly = df[df["category"] != "Income"].copy()
@@ -44,7 +45,7 @@ def get_monthly_spending(df):
     return monthly.groupby("month", as_index=False)["amount"].sum().sort_values("month")
 
 
-def forecast_spending(df, days_ahead=30):
+def forecast_spending(df: pd.DataFrame, days_ahead: int = 30) -> Optional[float]:
     if df.empty:
         return None
     expense_df = df[df["category"] != "Income"].copy()
@@ -55,7 +56,7 @@ def forecast_spending(df, days_ahead=30):
     return daily_avg * days_ahead
 
 
-def get_spending_insights(df):
+def get_spending_insights(df: pd.DataFrame) -> list[str]:
     if df.empty:
         return []
     insights = []

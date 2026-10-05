@@ -21,19 +21,26 @@ DEFAULT_BUDGETS = {
 }
 
 
-def ensure_column(conn, table_name, column_name, column_sql):
+def _connect() -> sqlite3.Connection:
+    return sqlite3.connect(os.environ.get("FINANCE_DB_PATH", DB_PATH))
+
+
+def ensure_column(
+    conn: sqlite3.Connection, table_name: str, column_name: str, column_sql: str
+) -> None:
     columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
     if column_name not in columns:
         conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
 
 
-def init_db():
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def init_db() -> None:
+    """Initialize the finance database and default budgets."""
+    with closing(_connect()) as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         _init_db(conn)
 
 
-def _init_db(conn):
+def _init_db(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS transactions (
@@ -105,8 +112,8 @@ def _init_db(conn):
     conn.commit()
 
 
-def get_transactions_df(user_id=0):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def get_transactions_df(user_id: int = 0) -> pd.DataFrame:
+    with closing(_connect()) as conn:
         df = pd.read_sql_query(
             "SELECT id, date, amount, category, description FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC",
             conn,
@@ -118,8 +125,8 @@ def get_transactions_df(user_id=0):
     return df
 
 
-def get_budget_df(user_id=0):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def get_budget_df(user_id: int = 0) -> pd.DataFrame:
+    with closing(_connect()) as conn:
         df = pd.read_sql_query(
             "SELECT category, value FROM budgets WHERE user_id = ? ORDER BY category ASC",
             conn,
@@ -128,8 +135,8 @@ def get_budget_df(user_id=0):
     return pd.DataFrame(columns=["category", "value"]) if df.empty else df
 
 
-def get_goals_df(user_id=0):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def get_goals_df(user_id: int = 0) -> pd.DataFrame:
+    with closing(_connect()) as conn:
         df = pd.read_sql_query(
             "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = ? ORDER BY name ASC",
             conn,
@@ -140,8 +147,10 @@ def get_goals_df(user_id=0):
     return df
 
 
-def save_transaction(user_id, amount, category, description, date_value):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def save_transaction(
+    user_id: int, amount: float, category: str, description: str, date_value: str
+) -> None:
+    with closing(_connect()) as conn:
         conn.execute(
             """
             INSERT INTO transactions (user_id, date, amount, category, description)
@@ -152,8 +161,15 @@ def save_transaction(user_id, amount, category, description, date_value):
         conn.commit()
 
 
-def update_transaction(user_id, transaction_id, amount, category, description, date_value):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def update_transaction(
+    user_id: int,
+    transaction_id: int,
+    amount: float,
+    category: str,
+    description: str,
+    date_value: str,
+) -> None:
+    with closing(_connect()) as conn:
         conn.execute(
             """
             UPDATE transactions
@@ -165,14 +181,14 @@ def update_transaction(user_id, transaction_id, amount, category, description, d
         conn.commit()
 
 
-def delete_transaction(user_id, transaction_id):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def delete_transaction(user_id: int, transaction_id: int) -> None:
+    with closing(_connect()) as conn:
         conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (int(transaction_id), int(user_id)))
         conn.commit()
 
 
-def save_budget(user_id, category, value):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def save_budget(user_id: int, category: str, value: float) -> None:
+    with closing(_connect()) as conn:
         conn.execute(
             """
             INSERT INTO budgets (user_id, category, value)
@@ -184,11 +200,11 @@ def save_budget(user_id, category, value):
         conn.commit()
 
 
-def add_custom_category(user_id, name, emoji="📦"):
+def add_custom_category(user_id: int, name: str, emoji: str = "📦") -> bool:
     name = name.strip()
     if not name or len(name) > 40 or name.casefold() == "income":
         return False
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(_connect()) as conn:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO custom_categories (user_id, name, emoji) VALUES (?, ?, ?)",
             (int(user_id), name, emoji),
@@ -199,8 +215,8 @@ def add_custom_category(user_id, name, emoji="📦"):
     return True
 
 
-def get_all_categories(user_id=0):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def get_all_categories(user_id: int = 0) -> list[str]:
+    with closing(_connect()) as conn:
         budget_categories = [
             row[0] for row in conn.execute(
                 "SELECT category FROM budgets WHERE user_id = ? UNION SELECT category FROM budgets WHERE user_id = 0",
@@ -216,8 +232,10 @@ def get_all_categories(user_id=0):
     return sorted(set(budget_categories + custom_categories + ["Income"]))
 
 
-def save_goal(user_id, name, target, description=""):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def save_goal(
+    user_id: int, name: str, target: float, description: str = ""
+) -> None:
+    with closing(_connect()) as conn:
         conn.execute(
             "INSERT INTO savings_goals (user_id, name, target, saved, description) VALUES (?, ?, ?, 0, ?)",
             (int(user_id), name.strip(), float(target), description.strip()),
@@ -225,8 +243,8 @@ def save_goal(user_id, name, target, description=""):
         conn.commit()
 
 
-def add_to_goal(user_id, goal_id, amount):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def add_to_goal(user_id: int, goal_id: int, amount: float) -> None:
+    with closing(_connect()) as conn:
         conn.execute(
             "UPDATE savings_goals SET saved = saved + ? WHERE id = ? AND user_id = ?",
             (float(amount), int(goal_id), int(user_id)),
@@ -234,7 +252,7 @@ def add_to_goal(user_id, goal_id, amount):
         conn.commit()
 
 
-def delete_goal(user_id, goal_id):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+def delete_goal(user_id: int, goal_id: int) -> None:
+    with closing(_connect()) as conn:
         conn.execute("DELETE FROM savings_goals WHERE id = ? AND user_id = ?", (int(goal_id), int(user_id)))
         conn.commit()
