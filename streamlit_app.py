@@ -76,7 +76,8 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL DEFAULT 0,
             category TEXT NOT NULL,
-            value REAL NOT NULL
+            value REAL NOT NULL,
+            UNIQUE(user_id, category)
         )
         """
     )
@@ -88,7 +89,8 @@ def init_db():
             name TEXT NOT NULL,
             target REAL NOT NULL,
             saved REAL NOT NULL DEFAULT 0,
-            description TEXT NOT NULL DEFAULT ''
+            description TEXT NOT NULL DEFAULT '',
+            UNIQUE(user_id, name)
         )
         """
     )
@@ -98,43 +100,20 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL DEFAULT 0,
             name TEXT NOT NULL,
-            emoji TEXT NOT NULL DEFAULT '📦'
+            emoji TEXT NOT NULL DEFAULT '📦',
+            UNIQUE(user_id, name)
         )
         """
     )
+
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets(user_id, category)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_name ON custom_categories(user_id, name)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_user_name ON savings_goals(user_id, name)")
 
     ensure_column(conn, "transactions", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "budgets", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "savings_goals", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "custom_categories", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
-
-    conn.execute(
-        """
-        DELETE FROM budgets
-        WHERE id NOT IN (
-            SELECT MIN(id)
-            FROM budgets
-            GROUP BY user_id, category
-        )
-        """
-    )
-    conn.execute(
-        """
-        DELETE FROM custom_categories
-        WHERE id NOT IN (
-            SELECT MIN(id)
-            FROM custom_categories
-            GROUP BY user_id, name
-        )
-        """
-    )
-
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets (user_id, category)"
-    )
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_name ON custom_categories (user_id, name)"
-    )
 
     existing_budget_rows = conn.execute(
         "SELECT category FROM budgets WHERE user_id = 0 GROUP BY category"
@@ -172,7 +151,7 @@ def get_transactions_df(user_id=None):
     conn.close()
     if df.empty:
         return pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
-    df["date"] = pd.to_datetime(df["date"]) 
+    df["date"] = pd.to_datetime(df["date"])
     return df
 
 
@@ -266,7 +245,7 @@ def add_custom_category(user_id, name, emoji="📦"):
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
-            "INSERT INTO custom_categories (user_id, name, emoji) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO custom_categories (user_id, name, emoji) VALUES (?, ?, ?)",
             (int(user_id), name.strip(), emoji),
         )
         conn.commit()
