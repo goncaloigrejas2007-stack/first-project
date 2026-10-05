@@ -373,16 +373,46 @@ def get_spending_insights(df):
 
 
 st.set_page_config(page_title="Finance Dashboard Pro", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
-st.markdown(
-    """
-    <style>
-    .block-container { padding-top: 1.5rem; }
-    .stMetric { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
-    .insight-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+THEMES = {
+    "light": {"bg": "#ffffff", "secondary": "#f3f4f6", "text": "#111827", "border": "#e5e7eb", "card": "#f9fafb", "insight_bg": "#fff3cd", "insight_text": "#664d03"},
+    "dark": {"bg": "#0F172A", "secondary": "#111827", "text": "#E5E7EB", "border": "#374151", "card": "#1f2937", "insight_bg": "#3b2f0b", "insight_text": "#fde68a"},
+}
+
+
+def apply_theme(theme_name):
+    p = THEMES.get(theme_name, THEMES["light"])
+    st.markdown(
+        f"""
+        <style>
+        .block-container {{ padding-top: 1.5rem; }}
+        .stApp {{ background-color: {p['bg']}; color: {p['text']}; }}
+        [data-testid="stSidebar"] {{ background-color: {p['secondary']}; }}
+        [data-testid="stHeader"] {{ background-color: {p['bg']}; }}
+        .stApp p, .stApp label, .stApp span, .stApp li, .stApp h1, .stApp h2, .stApp h3, .stApp h4,
+        .stApp [data-testid="stMarkdownContainer"], .stApp [data-testid="stWidgetLabel"] {{ color: {p['text']}; }}
+        .stApp input, .stApp textarea, .stApp [data-baseweb="select"] > div,
+        .stApp [data-baseweb="input"], .stApp [data-testid="stNumberInput"] input {{
+            background-color: {p['card']} !important; color: {p['text']} !important; border-color: {p['border']} !important; }}
+        .stTabs [data-baseweb="tab"] {{ color: {p['text']}; }}
+        .stMetric {{ background: {p['card']}; border: 1px solid {p['border']}; border-radius: 10px; padding: 10px; }}
+        .stMetric * {{ color: {p['text']} !important; }}
+        .insight-box {{ background: {p['insight_bg']}; color: {p['insight_text']}; border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }}
+        [data-testid="stDataFrame"] {{ background-color: {p['card']}; border: 1px solid {p['border']}; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def style_chart(chart, theme_name):
+    p = THEMES.get(theme_name, THEMES["light"])
+    return (
+        chart.configure(background=p["bg"])
+        .configure_axis(labelColor=p["text"], titleColor=p["text"], gridColor=p["border"], domainColor=p["border"])
+        .configure_legend(labelColor=p["text"], titleColor=p["text"])
+        .configure_view(strokeWidth=0)
+    )
+
 
 init_auth_db()
 init_db()
@@ -441,13 +471,18 @@ if st.session_state.user_id is None:
 user_id = st.session_state.user_id
 username = st.session_state.username
 
+if "theme" not in st.session_state or st.session_state.get("theme_user_id") != user_id:
+    saved_theme = get_user_settings(user_id).get("theme", "light")
+    st.session_state.theme = saved_theme if saved_theme in THEMES else "light"
+    st.session_state.theme_user_id = user_id
+
 with st.sidebar:
     st.title(f"👋 {username}")
     st.caption("Private finance dashboard")
 
     settings = get_user_settings(user_id)
     st.subheader("Settings")
-    theme = st.selectbox("Theme", ["light", "dark"], index=["light", "dark"].index(settings.get("theme", "light")))
+    theme = st.selectbox("Theme", ["light", "dark"], key="theme")
     llm_model = st.selectbox("AI model", ["groq"], index=0)
     notifications_enabled = st.checkbox("Enable notifications", value=bool(settings.get("notifications_enabled", 1)))
     if st.button("Save settings"):
@@ -461,6 +496,7 @@ with st.sidebar:
         st.session_state.chat_history = []
         st.rerun()
 
+apply_theme(st.session_state.theme)
 st.title("💰 Personal Finance Dashboard Pro")
 transactions_df = get_transactions_df(user_id)
 expense_df = transactions_df[transactions_df["category"] != "Income"].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
@@ -501,12 +537,51 @@ if not transactions_df.empty:
         st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
 
 st.divider()
+flash_message = st.session_state.pop("transaction_saved", None)
+if flash_message:
+    st.toast(flash_message, icon="✅")
+
+
+def render_add_transaction(prefix, show_category_manager=False):
+    with st.form(f"{prefix}_transaction_form", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            amount = st.number_input("Amount (€)", min_value=0.0, step=0.01, key=f"{prefix}_amount")
+        with c2:
+            category = st.selectbox("Category", get_all_categories(user_id), key=f"{prefix}_category")
+        description = st.text_input("Description", key=f"{prefix}_description")
+        date_value = st.date_input("Date", datetime.now(), key=f"{prefix}_date")
+        submitted = st.form_submit_button("💾 Save transaction")
+    if submitted:
+        if amount <= 0:
+            st.warning("Amount must be greater than 0")
+        else:
+            save_transaction(user_id, amount, category, description, date_value)
+            st.session_state["transaction_saved"] = "Transaction saved!"
+            st.rerun()
+
+    if show_category_manager:
+        with st.expander("🏷️ Manage categories"):
+            new_category = st.text_input("New category", key=f"{prefix}_new_category")
+            new_emoji = st.selectbox("Emoji", ["🍔", "🚗", "🎬", "💡", "🏃", "🛍️", "📚", "📺", "✈️", "💅", "📦", "🏥", "🎮", "📱", "👕"], key=f"{prefix}_new_emoji")
+            if st.button("Add category", key=f"{prefix}_add_category"):
+                if new_category.strip():
+                    add_custom_category(user_id, new_category, new_emoji)
+                    save_budget(user_id, new_category, 100)
+                    st.success("Category added.")
+                    st.rerun()
+                else:
+                    st.warning("Category name is required.")
+
+
 overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, ai_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions", "AI Assistant"])
 
 with overview_tab:
+    with st.expander("➕ Add transaction"):
+        render_add_transaction("ov")
     st.subheader("📝 Recent transactions")
     if transactions_df.empty:
-        st.info("Add your first transaction from the sidebar to start tracking your finances.")
+        st.info("Add your first transaction in the Transactions tab to start tracking your finances.")
     else:
         recent = transactions_df.sort_values("date", ascending=False).head(10).copy()
         recent["date"] = recent["date"].dt.strftime("%d/%m/%Y")
@@ -530,7 +605,7 @@ with overview_tab:
                 tooltip=["month", "amount"],
                 color=alt.value("#4f46e5"),
             ).interactive()
-            st.altair_chart(trend_chart, use_container_width=True)
+            st.altair_chart(style_chart(trend_chart, st.session_state.theme), use_container_width=True)
 
 with analytics_tab:
     if transactions_df.empty:
@@ -547,7 +622,7 @@ with analytics_tab:
                     color=alt.Color("category:N", legend=None),
                     tooltip=["category", "amount"],
                 ).interactive()
-                st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(style_chart(chart, st.session_state.theme), use_container_width=True)
             with c2:
                 st.subheader("🥧 Category distribution")
                 pie_chart = alt.Chart(category_summary).mark_arc().encode(
@@ -555,7 +630,7 @@ with analytics_tab:
                     color=alt.Color("category:N", legend=alt.Legend(title="Category")),
                     tooltip=["category", "amount"],
                 ).interactive()
-                st.altair_chart(pie_chart, use_container_width=True)
+                st.altair_chart(style_chart(pie_chart, st.session_state.theme), use_container_width=True)
 
             st.divider()
             st.subheader("📊 Advanced statistics")
@@ -694,10 +769,13 @@ with savings_tab:
             st.rerun()
 
 with transactions_tab:
+    st.subheader("➕ Add transaction")
+    render_add_transaction("tx", show_category_manager=True)
+    st.divider()
     st.subheader("📋 All transactions")
     df = transactions_df.copy()
     if df.empty:
-        st.info("No transactions to display. Add some from the sidebar.")
+        st.info("No transactions to display. Add one using the form above.")
     else:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -771,33 +849,6 @@ with transactions_tab:
             st.metric("Net", f"€{net:.2f}")
         with c4:
             st.metric("Transactions", count)
-
-with st.sidebar:
-    st.subheader("➕ Add transaction")
-    with st.form("transaction_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            amount = st.number_input("Amount (€)", min_value=0.0, step=0.01)
-        with c2:
-            category_options = get_all_categories(user_id)
-            category = st.selectbox("Category", category_options)
-        description = st.text_input("Description")
-        date_value = st.date_input("Date", datetime.now())
-        submitted = st.form_submit_button("💾 Save transaction")
-        if submitted and amount > 0:
-            save_transaction(user_id, amount, category, description, date_value)
-            st.sidebar.success("Transaction saved!")
-            st.rerun()
-
-    with st.expander("🏷️ Manage categories"):
-        new_category = st.text_input("New category")
-        new_emoji = st.selectbox("Emoji", ["🍔", "🚗", "🎬", "💡", "🏃", "🛍️", "📚", "📺", "✈️", "💅", "📦", "🏥", "🎮", "📱", "👕"])
-        if st.button("Add category"):
-            if new_category.strip():
-                add_custom_category(user_id, new_category, new_emoji)
-                save_budget(user_id, new_category, 100)
-                st.success("Category added.")
-                st.rerun()
 
 with ai_tab:
     st.subheader("🤖 Financial AI assistant")
