@@ -85,11 +85,12 @@ def register_user(username: str, email: str, password: str) -> dict:
     if "@" not in email or "." not in email:
         return {"success": False, "message": "Invalid email format."}
 
+    conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         password_hash = hash_password(password)
 
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO users (username, email, password_hash, created_at)
             VALUES (?, ?, ?, ?)
@@ -97,7 +98,7 @@ def register_user(username: str, email: str, password: str) -> dict:
             (username, email, password_hash, datetime.now().isoformat()),
         )
 
-        user_id = conn.lastrowid
+        user_id = cursor.lastrowid
 
         # Add default settings
         conn.execute(
@@ -106,7 +107,6 @@ def register_user(username: str, email: str, password: str) -> dict:
         )
 
         conn.commit()
-        conn.close()
 
         return {
             "success": True,
@@ -122,6 +122,9 @@ def register_user(username: str, email: str, password: str) -> dict:
         return {"success": False, "message": "Registration failed. Try again."}
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def login_user(username: str, password: str) -> dict:
@@ -192,7 +195,7 @@ def get_user_by_id(user_id: int) -> dict:
             return {
                 "id": result[0],
                 "username": result[1],
-                "email": result[1],
+                "email": result[2],
                 "created_at": result[3],
                 "last_login": result[4],
             }
