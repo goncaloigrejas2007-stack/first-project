@@ -108,6 +108,35 @@ def init_db():
     ensure_column(conn, "savings_goals", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "custom_categories", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
 
+    # Normalize any historical duplicates before creating the unique indexes required by upserts.
+    conn.execute(
+        """
+        DELETE FROM budgets
+        WHERE id NOT IN (
+            SELECT MIN(id)
+            FROM budgets
+            GROUP BY user_id, category
+        )
+        """
+    )
+    conn.execute(
+        """
+        DELETE FROM custom_categories
+        WHERE id NOT IN (
+            SELECT MIN(id)
+            FROM custom_categories
+            GROUP BY user_id, name
+        )
+        """
+    )
+
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets (user_id, category)"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_name ON custom_categories (user_id, name)"
+    )
+
     existing_budget_rows = conn.execute(
         "SELECT category FROM budgets WHERE user_id = 0 GROUP BY category"
     ).fetchall()
@@ -446,7 +475,7 @@ with st.sidebar:
     if st.button("Save settings"):
         update_user_settings(user_id, {"theme": theme, "llm_model": llm_model, "notifications_enabled": int(notifications_enabled)})
         st.success("Settings saved")
-    
+
     st.divider()
     if st.button("Logout"):
         st.session_state.user_id = None
