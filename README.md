@@ -2,8 +2,8 @@
 
 A modern, interactive personal finance dashboard built with Python and Streamlit. Track your expenses, manage budgets, set savings goals, and visualize your financial data with beautiful charts.
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.0+-red?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.9+-blue?style=flat-square)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.50+-red?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
@@ -53,7 +53,7 @@ A modern, interactive personal finance dashboard built with Python and Streamlit
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.9 or higher
 - pip (Python package manager)
 
 ### Installation

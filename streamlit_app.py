@@ -515,7 +515,7 @@ with overview_tab:
         recent = transactions_df.sort_values("date", ascending=False).head(10).copy()
         recent["date"] = recent["date"].dt.strftime("%d/%m/%Y")
         recent["amount"] = recent["amount"].apply(lambda x: f"€{x:.2f}")
-        st.dataframe(recent, use_container_width=True, hide_index=True)
+        st.dataframe(recent, width="stretch", hide_index=True)
 
     st.divider()
     c1, c2 = st.columns(2)
@@ -534,7 +534,7 @@ with overview_tab:
                 tooltip=["month", "amount"],
                 color=alt.value("#4f46e5"),
             ).interactive()
-            st.altair_chart(trend_chart, use_container_width=True)
+            st.altair_chart(trend_chart, width="stretch")
 
 with analytics_tab:
     if transactions_df.empty:
@@ -551,7 +551,7 @@ with analytics_tab:
                     color=alt.Color("category:N", legend=None),
                     tooltip=["category", "amount"],
                 ).interactive()
-                st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(chart, width="stretch")
             with c2:
                 st.subheader("🥧 Category distribution")
                 pie_chart = alt.Chart(category_summary).mark_arc().encode(
@@ -559,7 +559,7 @@ with analytics_tab:
                     color=alt.Color("category:N", legend=alt.Legend(title="Category")),
                     tooltip=["category", "amount"],
                 ).interactive()
-                st.altair_chart(pie_chart, use_container_width=True)
+                st.altair_chart(pie_chart, width="stretch")
 
             st.divider()
             st.subheader("📊 Advanced statistics")
@@ -735,7 +735,7 @@ with transactions_tab:
         display_df = filtered_df[["date", "amount", "category", "description"]].copy()
         display_df["date"] = display_df["date"].dt.strftime("%d/%m/%Y")
         display_df["amount"] = display_df["amount"].apply(lambda x: f"€{x:.2f}")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+        st.dataframe(display_df, width="stretch", hide_index=True)
 
         st.download_button("📤 Export filtered CSV", export_transactions_csv(filtered_df), file_name="filtered_transactions.csv", mime="text/csv")
 
