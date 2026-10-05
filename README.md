@@ -44,6 +44,8 @@ A modern, interactive personal finance dashboard built with Python and Streamlit
 - **Export Data** - Download filtered transactions as CSV
 
 ### 🗄️ Data Persistence
+- **User Accounts** - Register/login (passwords hashed with bcrypt); each user sees only their own data
+- **Light/Dark Theme** - Choose the theme in the sidebar settings
 - **SQLite Database** - All data is saved locally and persists between sessions
 - **No Cloud** - Your financial data stays on your computer
 - **Automatic Backup** - Database is created automatically on first run
@@ -142,12 +144,11 @@ The app will automatically open at `http://localhost:8501`
 ```
 first-project/
 ├── streamlit_app.py          # Main application
+├── auth_manager.py           # Login/registration and user settings
 ├── requirements.txt          # Python dependencies
 ├── finance_data.db          # SQLite database (auto-generated)
 ├── README.md                # Documentation
-├── .gitignore               # Git ignore rules
-└── .github/                 # GitHub configuration
-    └── ISSUE_TEMPLATE/      # Issue templates
+└── .gitignore               # Git ignore rules
 ```
 
 ---
@@ -161,7 +162,7 @@ first-project/
 | **Pandas** | Data manipulation and analysis |
 | **SQLite3** | Local database |
 | **Altair** | Interactive data visualizations |
-| **NumPy** | Numerical computations |
+| **bcrypt** | Password hashing |
 
 ---
 
@@ -219,9 +220,7 @@ cp finance_data.db finance_data.db.backup
 ## 📈 Future Enhancements
 
 Planned features for upcoming versions:
-- [ ] Dark mode / Theme customization
 - [ ] Recurring transaction templates
-- [ ] Custom categories
 - [ ] CSV import for historical data
 - [ ] Advanced financial reports (PDF export)
 - [ ] Multi-currency support
@@ -288,14 +287,13 @@ Created by **Gonçalo Igrejas**
 - Analytics dashboard
 
 ### Version 1.1 (Current)
+- Dark/light theme and custom categories
 - Savings goals
 - Monthly comparisons
 - Budget alerts
 - Enhanced UI
 
 ### Version 2.0 (Planned)
-- Dark mode
-- Custom categories
 - Recurring transactions
 - Advanced reports
 - Data import/export
