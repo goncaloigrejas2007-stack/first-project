@@ -106,14 +106,14 @@ def init_db():
         """
     )
 
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets(user_id, category)")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_name ON custom_categories(user_id, name)")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_user_name ON savings_goals(user_id, name)")
-
     ensure_column(conn, "transactions", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "budgets", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "savings_goals", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "custom_categories", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
+
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets(user_id, category)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_name ON custom_categories(user_id, name)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_user_name ON savings_goals(user_id, name)")
 
     existing_budget_rows = conn.execute(
         "SELECT category FROM budgets WHERE user_id = 0 GROUP BY category"
@@ -342,12 +342,13 @@ def get_monthly_spending(df):
 
 
 def forecast_spending(df, days_ahead=30):
-    if df.empty or len(df["date"].unique()) < 7:
+    if df.empty:
         return None
     expense_df = df[df["category"] != "Income"].copy()
-    if expense_df.empty:
+    expense_days = expense_df["date"].dt.normalize().nunique()
+    if expense_df.empty or expense_days < 7:
         return None
-    daily_avg = expense_df["amount"].sum() / len(df["date"].unique())
+    daily_avg = expense_df["amount"].sum() / expense_days
     return daily_avg * days_ahead
 
 
@@ -378,7 +379,6 @@ st.markdown(
     <style>
     .block-container { padding-top: 1.5rem; }
     .stMetric { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
-    .insight-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -477,7 +477,11 @@ else:
     total_income = transactions_df[transactions_df["category"] == "Income"]["amount"].sum()
     net_balance = total_income - total_spending
     avg_transaction = expense_df["amount"].mean() if not expense_df.empty else 0.0
-    current_month = transactions_df[transactions_df["date"].dt.month == datetime.now().month]
+    now = datetime.now()
+    current_month = transactions_df[
+        (transactions_df["date"].dt.year == now.year)
+        & (transactions_df["date"].dt.month == now.month)
+    ]
     month_spending = current_month[current_month["category"] != "Income"]["amount"].sum()
     month_income = current_month[current_month["category"] == "Income"]["amount"].sum()
 
@@ -498,7 +502,7 @@ if not transactions_df.empty:
     st.divider()
     st.subheader("🔍 Smart insights")
     for insight in get_spending_insights(transactions_df):
-        st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
+        st.info(insight)
 
 st.divider()
 overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, ai_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions", "AI Assistant"])
@@ -595,7 +599,15 @@ with budget_tab:
 
     st.divider()
     st.subheader("📊 Budget vs actual spending")
-    current_month_df = transactions_df[transactions_df["date"].dt.month == datetime.now().month].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
+    now = datetime.now()
+    current_month_df = (
+        transactions_df[
+            (transactions_df["date"].dt.year == now.year)
+            & (transactions_df["date"].dt.month == now.month)
+        ].copy()
+        if not transactions_df.empty
+        else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
+    )
     budget_summary_df = calculate_budget_summary(current_month_df, user_id)
     if budget_summary_df.empty:
         st.info("No budget data available yet.")
