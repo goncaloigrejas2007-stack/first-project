@@ -1,60 +1,57 @@
-# 💰 FinanceFlow - Personal Finance Dashboard
+# 💰 Finance Dashboard Pro
 
-A modern, interactive personal finance dashboard built with Python and Streamlit. Track your expenses, manage budgets, set savings goals, and visualize your financial data with beautiful charts.
+A personal finance dashboard built with Python and Streamlit. Create an account, track income and expenses, set monthly budgets and savings goals, and explore your spending with charts. Everything runs locally and is stored in SQLite.
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue?style=flat-square)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.0+-red?style=flat-square)
+![Python](https://img.shields.io/badge/Python-3.9+-blue?style=flat-square)
+![Streamlit](https://img.shields.io/badge/Streamlit-app-red?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
 ---
 
 ## ✨ Features
 
-### 📊 Dashboard & Analytics
-- **Real-time Overview** - See your total income, spending, net balance, and average transactions at a glance
-- **Interactive Charts** - Beautiful visualizations using Altair
-  - Spending by category (bar chart)
-  - Category distribution (pie chart)
-  - Daily spending trends (line chart)
-  - Monthly comparison (bar chart)
-- **Monthly Reports** - Track spending patterns month over month
+### 👤 Accounts
+- Register and log in with a username, email and password
+- Each user only sees their own transactions, budgets and goals
+- Passwords are hashed with bcrypt
+- Per-user settings: light/dark theme and a notifications checkbox (the preference is saved, but no notifications are sent yet)
 
-### 💳 Budget Management
-- **Budget Setup** - Define monthly budgets for each category
-- **Real-time Tracking** - Compare actual spending vs. budget
-- **Smart Alerts**
-  - 🟡 Warning when you reach 75% of budget
-  - 🔴 Alert when budget is exceeded
-  - 🟢 All good when spending is within limits
+### 📝 Transactions
+- Add income and expenses with amount, category, description and date
+- Add transactions from the **Transactions** tab, or from an expander in the **Overview** tab
+- Create your own categories, each with an emoji
+- Filter by category and date range, and sort by date or amount
+- Edit or delete any transaction
+- Export the filtered list as CSV
 
-### 💼 Savings Goals
-- **Goal Creation** - Set financial targets (travel, emergency fund, new laptop, etc.)
-- **Progress Tracking** - Visual progress bars showing how close you are to your goals
-- **Goal Management** - Add contributions and delete goals as needed
-- **Achievement Milestones** - Celebrate when you reach 75% and 100% of your goal
+### 📊 Overview and analytics
+- Headline metrics: total spending, total income, net balance, average transaction, and a 30-day spending forecast (shown once you have expenses on at least 7 different days)
+- Smart insights: top spending category, unusually large transactions, and the 30-day average
+- This month's spending and income
+- Charts (Altair): monthly spending trend, spending by category (bar), category distribution (pie)
+- Statistics: median, standard deviation, highest and lowest expense
 
-### 📝 Transaction Management
-- **Quick Add** - Add transactions from the Overview or Transactions tab with date, amount, category, and description
-- **Edit & Delete** - Full control over your transaction history
-- **Advanced Filtering**
-  - Filter by category (single or multiple)
-  - Filter by date range
-  - Sort by date or amount
-- **Export Data** - Download filtered transactions as CSV
+### 🎯 Budget
+- A monthly budget for every category
+- Budget vs. actual spending for the current month, with a progress bar per category
+- 🟢 under 75% used, 🟡 above 75%, 🔴 over budget
+- Save your changes or reset to the defaults
 
-### 🗄️ Data Persistence
-- **SQLite Database** - All data is saved locally and persists between sessions
-- **No Cloud** - Your financial data stays on your computer
-- **Automatic Backup** - Database is created automatically on first run
+### 💼 Savings goals
+- Create goals with a target amount and an optional description
+- Add contributions and track progress with progress bars
+- Delete goals you no longer need
+
+### 🎨 Theme
+- Light and dark themes, applied immediately from the sidebar
+- Click **Save settings** to keep your choice for the next login
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
-### Prerequisites
-- Python 3.8 or higher
-- pip (Python package manager)
+### Requirements
+- Python 3.9 or higher
 
 ### Installation
 
@@ -75,525 +72,145 @@ python -m venv .venv
 .venv\Scripts\activate
 ```
 
-3. **Install dependencies**
+3. **Install the dependencies**
 ```bash
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
-4. **Run the application**
+4. **Run the app**
 ```bash
-streamlit run streamlit_app.py
+python3 -m streamlit run streamlit_app.py
 ```
 
-5. **Open in browser**
-The app will automatically open at `http://localhost:8501`
+5. **Open it in your browser** at `http://localhost:8501`
+
+> On macOS, `pip` and `streamlit` are often not on the PATH. Using `python3 -m pip` and `python3 -m streamlit` avoids that problem. On Windows, use `python` instead of `python3`.
+
+The databases are created automatically on first run. To use the app again later, activate the virtual environment first (`source .venv/bin/activate`), then run the last command.
 
 ---
 
-## 📖 How to Use
+## 📖 How to use
 
-### Adding a Transaction
-1. Open the **Overview** tab and expand **Add transaction**, or use the form at the top of **Transactions**
-2. Fill in the transaction details:
-   - **Amount** - How much you spent or earned
-   - **Category** - Select from predefined categories or add custom ones
-   - **Description** - Optional note about the transaction
-   - **Date** - When the transaction occurred
-3. Click **Save transaction**
-
-### Managing Budget
-1. Go to the **🎯 Budget** tab
-2. Set your monthly limits for each category
-3. Click "💾 Save Budget" to apply changes
-4. View **Budget vs Actual Spending** to track progress
-5. Color indicators show your status:
-   - 🟢 Within budget
-   - 🟡 75% of budget reached (warning)
-   - 🔴 Budget exceeded
-
-### Setting Savings Goals
-1. Go to the **💼 Savings** tab
-2. Click "Add Goal" section
-3. Enter:
-   - **Goal name** - What you're saving for
-   - **Target amount** - How much you want to save
-   - **Description** - Optional details
-4. Click "Add Goal"
-5. Track progress with visual progress bars
-6. Add contributions using "Add Contribution" section
-
-### Viewing Analytics
-1. Go to the **📈 Analytics** tab
-2. See spending breakdown by category
-3. View 30-day spending trends
-4. Compare spending across months
-5. Identify spending patterns and trends
-
-### Exporting Data
-1. Go to the **📋 Transactions** tab
-2. Apply filters (category, date range, sort order)
-3. Click "📤 Export filtered CSV"
-4. Use the data in Excel, Google Sheets, or other tools
-
-### Changing the Theme
-Choose **light** or **dark** in the sidebar to apply it immediately. Click **Save settings** to keep the preference for your next login.
+1. **Register** a new account, then **log in**. Passwords need at least 8 characters, with a letter and a digit.
+2. Open the **Transactions** tab and fill in the **Add transaction** form at the top. You can also use the **Add transaction** expander in the **Overview** tab.
+3. To add a category of your own, use **Manage categories** in the **Transactions** tab.
+4. Open **Budget** to set monthly limits per category and see how you are doing this month.
+5. Open **Savings** to create goals and add contributions.
+6. Open **Analytics** for charts and statistics.
+7. In **Transactions**, filter and sort your history, edit or delete entries, or export a CSV.
 
 ---
 
-## 📊 Project Structure
+## 📁 Project structure
 
 ```
 first-project/
-├── streamlit_app.py          # Main application
-├── auth_manager.py           # User registration, login, and settings
+├── streamlit_app.py          # The app: UI, finance data and charts
+├── auth_manager.py           # Registration, login and user settings
 ├── requirements.txt          # Python dependencies
-├── test_smoke.py             # Streamlit app smoke test
-├── .streamlit/config.toml    # Streamlit theme defaults
-├── README.md                # Documentation
-└── .gitignore                # Local files and databases to ignore
+├── test_smoke.py             # Smoke test using Streamlit's AppTest
+├── .streamlit/config.toml    # Streamlit defaults (accent color and font)
+├── .gitignore                # Local files and databases to ignore
+├── LICENSE                   # MIT license
+└── README.md                 # This file
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠️ Tech stack
 
 | Technology | Purpose |
 |-----------|---------|
-| **Python 3.8+** | Programming language |
-| **Streamlit** | Web framework for data apps |
-| **Pandas** | Data manipulation and analysis |
-| **SQLite3** | Local database |
-| **Altair** | Interactive data visualizations |
+| **Python** | Programming language |
+| **Streamlit** | Web interface |
+| **Pandas** | Data processing |
+| **Altair** | Charts |
+| **SQLite** | Local databases |
 | **bcrypt** | Password hashing |
 
 ---
 
-## 📝 Default Categories
+## 📝 Default categories and budgets
 
-The app comes with these default expense categories:
-- 🍔 **Food** - €500/month
-- 🚗 **Transport** - €150/month
-- 🎬 **Entertainment** - €300/month
-- 💡 **Utilities** - €200/month
-- 🛍️ **Other** - €200/month
-- 💵 **Income** - Special category for earnings
+| Category | Monthly budget |
+|----------|---------------:|
+| 🍔 Food & Dining | €500 |
+| 🚗 Transport | €150 |
+| 🎬 Entertainment | €300 |
+| 💡 Utilities | €200 |
+| 🏃 Health & Fitness | €150 |
+| 🛍️ Shopping | €250 |
+| 📚 Education | €200 |
+| 📺 Subscriptions | €100 |
+| ✈️ Travel & Holidays | €400 |
+| 💅 Personal Care | €100 |
+| 📦 Other | €200 |
 
-You can customize these budgets in the Budget tab.
+**Income** is a special category for earnings. It has no budget and is not counted as spending. A custom category gets a default budget of €100.
+
+You can change any budget in the **Budget** tab.
 
 ---
 
-## 💾 Data Storage
+## 💾 Data storage
 
-All your financial data is stored in a local SQLite database (`finance_data.db`). 
+The app uses two SQLite files, created next to the code:
 
-**Key tables:**
-- `transactions` - All your income and expenses
-- `budgets` - Your monthly budget limits
-- `savings_goals` - Your financial goals and progress
+| File | Contents |
+|------|----------|
+| `users.db` | Accounts (username, email, password hash) and settings |
+| `finance_data.db` | Transactions, budgets, savings goals and custom categories |
 
-**Backup your data:**
+Both files are ignored by git. To store them somewhere else, set these environment variables before starting the app:
+
 ```bash
+export AUTH_DB_PATH=/path/to/users.db
+export FINANCE_DB_PATH=/path/to/finance_data.db
+```
+
+**Back up your data** by copying both files:
+```bash
+cp users.db users.db.backup
 cp finance_data.db finance_data.db.backup
 ```
 
 ---
 
-## 🎨 UI/UX Highlights
+## 🔐 Privacy and security
 
-- ✅ Clean, modern interface
-- ✅ Light and dark themes, applied immediately from the sidebar
-- ✅ Responsive design that works on desktop
-- ✅ Color-coded budget status (🟢🟡🔴)
-- ✅ Interactive charts with tooltips
-- ✅ Real-time calculations
-- ✅ Sidebar for settings and theme selection
-- ✅ Emoji indicators for quick visual reference
-
----
-
-## 🔐 Privacy & Security
-
-- 🔒 **No cloud storage** - Everything stays on your computer
-- 🔒 **No internet required** - Works completely offline
-- 🔒 **No data sharing** - Your financial data is yours alone
-- 🔒 **Open source** - You can review the code anytime
+- All data stays on the machine that runs the app. Nothing is sent to any external service.
+- Passwords are stored as bcrypt hashes, never as plain text.
+- Login errors are generic, so they do not reveal whether a username exists.
+- This is a personal project for local use. It has no rate limiting, no password reset and no session persistence (refreshing the page logs you out). It is not designed to be exposed on the public internet.
 
 ---
 
 ## 🧪 Testing
 
-Run the Streamlit smoke test with:
+Run the smoke test with:
 
 ```bash
-python -m unittest test_smoke
+python3 -m unittest test_smoke
 ```
 
-The test uses temporary SQLite databases and exercises registration, login, and adding a transaction.
+The test starts the app with temporary SQLite databases, registers and logs in a user, checks that a zero amount is rejected, and saves a transaction.
 
 ---
 
-## 💬 Contributing
+## 🎯 Ideas for the future
 
-Contributions are welcome! Here's how:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+- Recurring transactions
+- Importing transactions from CSV
+- Real notifications for budget alerts
+- More reports
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
----
-
-## 🤝 Support
-
-If you find this project helpful, please:
-- ⭐ Star the repository on GitHub
-- 🐛 Report issues if you find any
-- 💡 Suggest improvements and features
-- 📢 Share it with friends
-
----
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ## 👨‍💻 Author
 
-Created by **Gonçalo Igrejas**
-
----
-
-## 📞 Contact & Social
-
-- GitHub: [@goncaloigrejas2007-stack](https://github.com/goncaloigrejas2007-stack)
-- Email: goncalo.igrejas2007@gmail.com
-
----
-
-## 🎯 Roadmap
-
-### Version 1.0 ✅
-- Basic transaction tracking
-- Budget management
-- Analytics dashboard
-
-### Version 1.1 (Current)
-- Savings goals
-- Monthly comparisons
-- Budget alerts
-- Enhanced UI
-
-### Version 2.0 (Planned)
-- Recurring transactions
-- Advanced reports
-- Data import/export
-
----
-
-## 📚 Resources
-
-- [Streamlit Documentation](https://docs.streamlit.io/)
-- [Pandas Documentation](https://pandas.pydata.org/docs/)
-- [Altair Documentation](https://altair-viz.github.io/)
-- [SQLite Documentation](https://www.sqlite.org/docs.html)
-
----
-
-Made with ❤️ using Streamlit
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-a
-b
-c
+Created by **Gonçalo Igrejas** · [@goncaloigrejas2007-stack](https://github.com/goncaloigrejas2007-stack)
