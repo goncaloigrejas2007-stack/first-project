@@ -35,7 +35,7 @@ A modern, interactive personal finance dashboard built with Python and Streamlit
 - **Achievement Milestones** - Celebrate when you reach 75% and 100% of your goal
 
 ### 📝 Transaction Management
-- **Quick Add** - Add transactions from the sidebar with date, amount, category, and description
+- **Quick Add** - Add transactions from the Overview or Transactions tab with date, amount, category, and description
 - **Edit & Delete** - Full control over your transaction history
 - **Advanced Filtering**
   - Filter by category (single or multiple)
@@ -93,13 +93,13 @@ The app will automatically open at `http://localhost:8501`
 ## 📖 How to Use
 
 ### Adding a Transaction
-1. Open the sidebar (left side)
+1. Open the **Overview** tab and expand **Add transaction**, or use the form at the top of **Transactions**
 2. Fill in the transaction details:
    - **Amount** - How much you spent or earned
    - **Category** - Select from predefined categories or add custom ones
    - **Description** - Optional note about the transaction
    - **Date** - When the transaction occurred
-3. Click "💾 Save Transaction"
+3. Click **Save transaction**
 
 ### Managing Budget
 1. Go to the **🎯 Budget** tab
@@ -135,6 +135,9 @@ The app will automatically open at `http://localhost:8501`
 3. Click "📤 Export filtered CSV"
 4. Use the data in Excel, Google Sheets, or other tools
 
+### Changing the Theme
+Choose **light** or **dark** in the sidebar to apply it immediately. Click **Save settings** to keep the preference for your next login.
+
 ---
 
 ## 📊 Project Structure
@@ -142,12 +145,12 @@ The app will automatically open at `http://localhost:8501`
 ```
 first-project/
 ├── streamlit_app.py          # Main application
+├── auth_manager.py           # User registration, login, and settings
 ├── requirements.txt          # Python dependencies
-├── finance_data.db          # SQLite database (auto-generated)
+├── test_smoke.py             # Streamlit app smoke test
+├── .streamlit/config.toml    # Streamlit theme defaults
 ├── README.md                # Documentation
-├── .gitignore               # Git ignore rules
-└── .github/                 # GitHub configuration
-    └── ISSUE_TEMPLATE/      # Issue templates
+└── .gitignore                # Local files and databases to ignore
 ```
 
 ---
@@ -161,7 +164,7 @@ first-project/
 | **Pandas** | Data manipulation and analysis |
 | **SQLite3** | Local database |
 | **Altair** | Interactive data visualizations |
-| **NumPy** | Numerical computations |
+| **bcrypt** | Password hashing |
 
 ---
 
@@ -198,11 +201,12 @@ cp finance_data.db finance_data.db.backup
 ## 🎨 UI/UX Highlights
 
 - ✅ Clean, modern interface
+- ✅ Light and dark themes, applied immediately from the sidebar
 - ✅ Responsive design that works on desktop
 - ✅ Color-coded budget status (🟢🟡🔴)
 - ✅ Interactive charts with tooltips
 - ✅ Real-time calculations
-- ✅ Sidebar for easy navigation
+- ✅ Sidebar for settings and theme selection
 - ✅ Emoji indicators for quick visual reference
 
 ---
@@ -216,26 +220,15 @@ cp finance_data.db finance_data.db.backup
 
 ---
 
-## 📈 Future Enhancements
+## 🧪 Testing
 
-Planned features for upcoming versions:
-- [ ] Dark mode / Theme customization
-- [ ] Recurring transaction templates
-- [ ] Custom categories
-- [ ] CSV import for historical data
-- [ ] Advanced financial reports (PDF export)
-- [ ] Multi-currency support
-- [ ] Budget alerts via email/SMS
-- [ ] Mobile-friendly version
+Run the Streamlit smoke test with:
 
----
+```bash
+python -m unittest test_smoke
+```
 
-## 🐛 Known Issues
-
-Currently known limitations:
-- Data is stored in browser session memory unless explicitly saved
-- Limited to single-currency (EUR)
-- No built-in password protection
+The test uses temporary SQLite databases and exercises registration, login, and adding a transaction.
 
 ---
 
@@ -294,8 +287,6 @@ Created by **Gonçalo Igrejas**
 - Enhanced UI
 
 ### Version 2.0 (Planned)
-- Dark mode
-- Custom categories
 - Recurring transactions
 - Advanced reports
 - Data import/export

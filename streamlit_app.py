@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -13,9 +14,8 @@ from auth_manager import (
     register_user,
     update_user_settings,
 )
-from llm_manager import get_llm_manager
 
-DB_PATH = Path(__file__).resolve().parent / "finance_data.db"
+DB_PATH = Path(os.environ.get("FINANCE_DB_PATH", Path(__file__).resolve().parent / "finance_data.db"))
 DEFAULT_BUDGETS = {
     "Food & Dining": 500,
     "Transport": 150,
@@ -274,6 +274,44 @@ def get_all_categories(user_id=None):
     return sorted(all_categories)
 
 
+def render_add_transaction(prefix, show_category_manager):
+    st.subheader("➕ Add transaction")
+    with st.form(f"{prefix}_transaction_form", clear_on_submit=True):
+        amount = st.number_input(
+            "Amount (€)", min_value=0.0, value=0.0, step=0.01, key=f"{prefix}_amount"
+        )
+        category = st.selectbox(
+            "Category", get_all_categories(user_id), key=f"{prefix}_category"
+        )
+        description = st.text_input("Description", key=f"{prefix}_description")
+        date_value = st.date_input("Date", datetime.now(), key=f"{prefix}_date")
+        submitted = st.form_submit_button(
+            "💾 Save transaction", key=f"{prefix}_submit"
+        )
+        if submitted:
+            if amount <= 0:
+                st.warning("Amount must be greater than 0")
+            else:
+                save_transaction(user_id, amount, category, description, date_value)
+                st.session_state.transaction_saved = True
+                st.rerun()
+
+    if show_category_manager:
+        with st.expander("🏷️ Manage categories"):
+            new_category = st.text_input("New category", key=f"{prefix}_new_category")
+            new_emoji = st.selectbox(
+                "Emoji",
+                ["🍔", "🚗", "🎬", "💡", "🏃", "🛍️", "📚", "📺", "✈️", "💅", "📦", "🏥", "🎮", "📱", "👕"],
+                key=f"{prefix}_new_emoji",
+            )
+            if st.button("Add category", key=f"{prefix}_add_category"):
+                if new_category.strip():
+                    add_custom_category(user_id, new_category, new_emoji)
+                    save_budget(user_id, new_category, 100.0)
+                    st.success("Category added.")
+                    st.rerun()
+
+
 def save_goal(user_id, name, target, description=""):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -373,16 +411,90 @@ def get_spending_insights(df):
 
 
 st.set_page_config(page_title="Finance Dashboard Pro", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
-st.markdown(
-    """
-    <style>
-    .block-container { padding-top: 1.5rem; }
-    .stMetric { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
-    .insight-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+THEMES = {
+    "light": {
+        "background": "#ffffff",
+        "sidebar": "#f8fafc",
+        "surface": "#f9fafb",
+        "text": "#111827",
+        "muted": "#64748b",
+        "border": "#e5e7eb",
+        "input": "#ffffff",
+        "accent": "#4f46e5",
+        "insight": "#fff3cd",
+        "grid": "#e5e7eb",
+    },
+    "dark": {
+        "background": "#0f172a",
+        "sidebar": "#111827",
+        "surface": "#1f2937",
+        "text": "#e5e7eb",
+        "muted": "#9ca3af",
+        "border": "#374151",
+        "input": "#1f2937",
+        "accent": "#818cf8",
+        "insight": "#422006",
+        "grid": "#374151",
+    },
+}
+
+
+def apply_theme():
+    theme = st.session_state.get("theme", "light")
+    palette = THEMES.get(theme, THEMES["light"])
+    st.markdown(
+        f"""
+        <style>
+        .block-container {{ padding-top: 1.5rem; }}
+        .stApp {{ background-color: {palette['background']}; color: {palette['text']}; }}
+        [data-testid="stSidebar"] {{ background-color: {palette['sidebar']}; }}
+        [data-testid="stHeader"] {{ background-color: {palette['background']}; }}
+        .stApp, .stApp label, .stApp p, .stApp h1, .stApp h2, .stApp h3,
+        .stApp [data-testid="stMarkdown"], .stApp [data-testid="stCaptionContainer"] {{
+            color: {palette['text']};
+        }}
+        .stApp input, .stApp textarea, .stApp [data-baseweb="select"] > div {{
+            background-color: {palette['input']}; color: {palette['text']};
+            border-color: {palette['border']};
+        }}
+        .stApp [data-testid="stNumberInput"] button {{
+            color: {palette['text']}; background-color: {palette['surface']};
+        }}
+        .stApp [data-testid="stTabs"] button {{ color: {palette['text']}; }}
+        .stApp [data-testid="stTabs"] button[aria-selected="true"] {{
+            color: {palette['accent']}; border-bottom-color: {palette['accent']};
+        }}
+        [data-testid="stMetric"] {{
+            background: {palette['surface']}; border: 1px solid {palette['border']};
+            border-radius: 10px; padding: 10px;
+        }}
+        .insight-box {{
+            background: {palette['insight']}; color: {palette['text']};
+            border-left: 4px solid {palette['accent']}; padding: 12px;
+            border-radius: 5px; margin: 10px 0;
+        }}
+        .stDataFrame {{ color: {palette['text']}; }}
+        [data-testid="stDataFrame"] {{ border-color: {palette['border']}; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def style_chart(chart):
+    palette = THEMES.get(st.session_state.get("theme", "light"), THEMES["light"])
+    return (
+        chart.configure(background=palette["background"])
+        .configure_axis(
+            labelColor=palette["text"],
+            titleColor=palette["text"],
+            gridColor=palette["grid"],
+            domainColor=palette["border"],
+            tickColor=palette["border"],
+        )
+        .configure_legend(labelColor=palette["text"], titleColor=palette["text"])
+        .configure_title(color=palette["text"])
+    )
 
 init_auth_db()
 init_db()
@@ -390,10 +502,6 @@ init_db()
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = ""
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-
 def show_auth_page():
     st.title("💰 Finance Dashboard Pro")
     st.write("Login to access your private financial dashboard.")
@@ -401,9 +509,9 @@ def show_auth_page():
 
     with auth_tab:
         with st.form("login_form"):
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Login")
+            username = st.text_input("Username", key="login_username")
+            password = st.text_input("Password", type="password", key="login_password")
+            submitted = st.form_submit_button("Login", key="login_submit")
             if submitted:
                 result = login_user(username, password)
                 if result["success"]:
@@ -416,11 +524,11 @@ def show_auth_page():
 
     with register_tab:
         with st.form("register_form"):
-            reg_username = st.text_input("Choose username")
-            reg_email = st.text_input("Email")
-            reg_password = st.text_input("Password", type="password")
-            confirm_password = st.text_input("Confirm password", type="password")
-            submitted = st.form_submit_button("Create account")
+            reg_username = st.text_input("Choose username", key="register_username")
+            reg_email = st.text_input("Email", key="register_email")
+            reg_password = st.text_input("Password", type="password", key="register_password")
+            confirm_password = st.text_input("Confirm password", type="password", key="register_confirm_password")
+            submitted = st.form_submit_button("Create account", key="register_submit")
             if submitted:
                 if reg_password != confirm_password:
                     st.error("Passwords do not match.")
@@ -440,26 +548,32 @@ if st.session_state.user_id is None:
 
 user_id = st.session_state.user_id
 username = st.session_state.username
+settings = get_user_settings(user_id)
+if st.session_state.get("theme_user_id") != user_id:
+    st.session_state.theme = settings.get("theme", "light")
+    st.session_state.theme_user_id = user_id
 
 with st.sidebar:
     st.title(f"👋 {username}")
     st.caption("Private finance dashboard")
 
-    settings = get_user_settings(user_id)
     st.subheader("Settings")
-    theme = st.selectbox("Theme", ["light", "dark"], index=["light", "dark"].index(settings.get("theme", "light")))
-    llm_model = st.selectbox("AI model", ["groq"], index=0)
+    theme = st.selectbox("Theme", ["light", "dark"], key="theme")
     notifications_enabled = st.checkbox("Enable notifications", value=bool(settings.get("notifications_enabled", 1)))
     if st.button("Save settings"):
-        update_user_settings(user_id, {"theme": theme, "llm_model": llm_model, "notifications_enabled": int(notifications_enabled)})
+        update_user_settings(user_id, {"theme": theme, "notifications_enabled": int(notifications_enabled)})
         st.success("Settings saved")
 
     st.divider()
     if st.button("Logout"):
         st.session_state.user_id = None
         st.session_state.username = ""
-        st.session_state.chat_history = []
+        st.session_state.theme_user_id = None
         st.rerun()
+
+apply_theme()
+if st.session_state.pop("transaction_saved", False):
+    st.toast("Transaction saved successfully!")
 
 st.title("💰 Personal Finance Dashboard Pro")
 transactions_df = get_transactions_df(user_id)
@@ -477,7 +591,11 @@ else:
     total_income = transactions_df[transactions_df["category"] == "Income"]["amount"].sum()
     net_balance = total_income - total_spending
     avg_transaction = expense_df["amount"].mean() if not expense_df.empty else 0.0
-    current_month = transactions_df[transactions_df["date"].dt.month == datetime.now().month]
+    now = datetime.now()
+    current_month = transactions_df[
+        (transactions_df["date"].dt.month == now.month)
+        & (transactions_df["date"].dt.year == now.year)
+    ]
     month_spending = current_month[current_month["category"] != "Income"]["amount"].sum()
     month_income = current_month[current_month["category"] == "Income"]["amount"].sum()
 
@@ -501,12 +619,17 @@ if not transactions_df.empty:
         st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
 
 st.divider()
-overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, ai_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions", "AI Assistant"])
+overview_tab, analytics_tab, transactions_tab, budget_tab, savings_tab = st.tabs(
+    ["Overview", "Analytics", "Transactions", "Budget", "Savings"]
+)
 
 with overview_tab:
+    with st.expander("➕ Add transaction"):
+        render_add_transaction("ov", show_category_manager=False)
+
     st.subheader("📝 Recent transactions")
     if transactions_df.empty:
-        st.info("Add your first transaction from the sidebar to start tracking your finances.")
+        st.info("Add your first transaction to start tracking your finances.")
     else:
         recent = transactions_df.sort_values("date", ascending=False).head(10).copy()
         recent["date"] = recent["date"].dt.strftime("%d/%m/%Y")
@@ -530,7 +653,7 @@ with overview_tab:
                 tooltip=["month", "amount"],
                 color=alt.value("#4f46e5"),
             ).interactive()
-            st.altair_chart(trend_chart, use_container_width=True)
+            st.altair_chart(style_chart(trend_chart), use_container_width=True)
 
 with analytics_tab:
     if transactions_df.empty:
@@ -547,7 +670,7 @@ with analytics_tab:
                     color=alt.Color("category:N", legend=None),
                     tooltip=["category", "amount"],
                 ).interactive()
-                st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(style_chart(chart), use_container_width=True)
             with c2:
                 st.subheader("🥧 Category distribution")
                 pie_chart = alt.Chart(category_summary).mark_arc().encode(
@@ -555,7 +678,7 @@ with analytics_tab:
                     color=alt.Color("category:N", legend=alt.Legend(title="Category")),
                     tooltip=["category", "amount"],
                 ).interactive()
-                st.altair_chart(pie_chart, use_container_width=True)
+                st.altair_chart(style_chart(pie_chart), use_container_width=True)
 
             st.divider()
             st.subheader("📊 Advanced statistics")
@@ -569,6 +692,9 @@ with analytics_tab:
             with sc4:
                 st.metric("Lowest", f"€{expense_df[expense_df['amount'] > 0]['amount'].min():.2f}" if not expense_df[expense_df["amount"] > 0].empty else "€0.00")
 
+with transactions_tab:
+    render_add_transaction("tx", show_category_manager=True)
+
 with budget_tab:
     st.subheader("🎯 Monthly budget")
     budget_df = get_budget_df(user_id)
@@ -579,7 +705,12 @@ with budget_tab:
 
     budget_values = {}
     for _, row in budget_df.iterrows():
-        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", value=float(row["value"]), step=10, key=f"budget_{user_id}_{row['category']}")
+        budget_values[row["category"]] = st.number_input(
+            f"{row['category']} (€)",
+            value=float(row["value"]),
+            step=10.0,
+            key=f"budget_{user_id}_{row['category']}",
+        )
 
     if st.button("💾 Save budget"):
         for category, value in budget_values.items():
@@ -595,7 +726,15 @@ with budget_tab:
 
     st.divider()
     st.subheader("📊 Budget vs actual spending")
-    current_month_df = transactions_df[transactions_df["date"].dt.month == datetime.now().month].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
+    now = datetime.now()
+    current_month_df = (
+        transactions_df[
+            (transactions_df["date"].dt.month == now.month)
+            & (transactions_df["date"].dt.year == now.year)
+        ].copy()
+        if not transactions_df.empty
+        else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
+    )
     budget_summary_df = calculate_budget_summary(current_month_df, user_id)
     if budget_summary_df.empty:
         st.info("No budget data available yet.")
@@ -656,7 +795,7 @@ with savings_tab:
     st.subheader("Create new goal")
     with st.form("goal_form", clear_on_submit=True):
         goal_name = st.text_input("Goal name")
-        goal_target = st.number_input("Target (€)", min_value=0.0, step=50.0)
+        goal_target = st.number_input("Target (€)", min_value=0.0, value=0.0, step=50.0)
         goal_description = st.text_input("Description (optional)")
         if st.form_submit_button("Add goal"):
             if goal_name.strip():
@@ -673,7 +812,7 @@ with savings_tab:
     else:
         with st.form("goal_contribution_form"):
             selected_goal = st.selectbox("Choose goal", goals_for_contribution["name"].tolist())
-            contribution = st.number_input("Contribution (€)", min_value=0.0, step=10.0)
+            contribution = st.number_input("Contribution (€)", min_value=0.0, value=0.0, step=10.0)
             if st.form_submit_button("Add to goal"):
                 goal_id = int(goals_for_contribution.loc[goals_for_contribution["name"] == selected_goal, "id"].iloc[0])
                 if contribution > 0:
@@ -697,7 +836,7 @@ with transactions_tab:
     st.subheader("📋 All transactions")
     df = transactions_df.copy()
     if df.empty:
-        st.info("No transactions to display. Add some from the sidebar.")
+        st.info("No transactions to display yet.")
     else:
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -734,14 +873,34 @@ with transactions_tab:
                 "Choose transaction",
                 filtered_df["id"].tolist(),
                 format_func=lambda x: f"#{x} - {filtered_df.loc[filtered_df['id'] == x, 'category'].iloc[0]} - €{filtered_df.loc[filtered_df['id'] == x, 'amount'].iloc[0]:.2f}",
+                key="edit_transaction_id",
             )
             row = filtered_df[filtered_df["id"] == transaction_id].iloc[0]
             transaction_categories = get_all_categories(user_id)
             with st.form("edit_transaction_form"):
-                edit_amount = st.number_input("Edit amount (€)", min_value=0.0, value=float(row["amount"]), step=0.01)
-                edit_category = st.selectbox("Edit category", transaction_categories, index=transaction_categories.index(row["category"]) if row["category"] in transaction_categories else 0)
-                edit_description = st.text_input("Edit description", value=row["description"])
-                edit_date = st.date_input("Edit date", value=row["date"].date())
+                edit_amount = st.number_input(
+                    "Edit amount (€)",
+                    min_value=0.0,
+                    value=float(row["amount"]),
+                    step=0.01,
+                    key=f"edit_amount_{transaction_id}",
+                )
+                edit_category = st.selectbox(
+                    "Edit category",
+                    transaction_categories,
+                    index=transaction_categories.index(row["category"]) if row["category"] in transaction_categories else 0,
+                    key=f"edit_category_{transaction_id}",
+                )
+                edit_description = st.text_input(
+                    "Edit description",
+                    value=row["description"],
+                    key=f"edit_description_{transaction_id}",
+                )
+                edit_date = st.date_input(
+                    "Edit date",
+                    value=row["date"].date(),
+                    key=f"edit_date_{transaction_id}",
+                )
                 c_edit, c_delete = st.columns(2)
                 with c_edit:
                     save_edit = st.form_submit_button("💾 Save changes")
@@ -771,67 +930,10 @@ with transactions_tab:
             st.metric("Net", f"€{net:.2f}")
         with c4:
             st.metric("Transactions", count)
-
-with st.sidebar:
-    st.subheader("➕ Add transaction")
-    with st.form("transaction_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            amount = st.number_input("Amount (€)", min_value=0.0, step=0.01)
-        with c2:
-            category_options = get_all_categories(user_id)
-            category = st.selectbox("Category", category_options)
-        description = st.text_input("Description")
-        date_value = st.date_input("Date", datetime.now())
-        submitted = st.form_submit_button("💾 Save transaction")
-        if submitted and amount > 0:
-            save_transaction(user_id, amount, category, description, date_value)
-            st.sidebar.success("Transaction saved!")
-            st.rerun()
-
-    with st.expander("🏷️ Manage categories"):
-        new_category = st.text_input("New category")
-        new_emoji = st.selectbox("Emoji", ["🍔", "🚗", "🎬", "💡", "🏃", "🛍️", "📚", "📺", "✈️", "💅", "📦", "🏥", "🎮", "📱", "👕"])
-        if st.button("Add category"):
-            if new_category.strip():
-                add_custom_category(user_id, new_category, new_emoji)
-                save_budget(user_id, new_category, 100)
-                st.success("Category added.")
-                st.rerun()
-
-with ai_tab:
-    st.subheader("🤖 Financial AI assistant")
-    llm = get_llm_manager()
-    if llm is None:
-        st.warning("Configure GROQ_API_KEY in environment variables or .env to enable AI assistant.")
-    else:
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        prompt = st.chat_input("Ask anything about your finances...")
-        if prompt:
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            finance_data = {
-                "total_spending": total_spending,
-                "total_income": total_income,
-                "monthly_spending": month_spending,
-                "category_breakdown": expense_df.groupby("category")["amount"].sum().to_dict() if not expense_df.empty else {},
-            }
-            response = llm.get_financial_advice(finance_data)
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
-            with st.chat_message("assistant"):
-                st.markdown(response)
-
 st.divider()
 st.markdown(
     """
-    <div style='text-align: center; color: #888; font-size: 12px;'>
+    <div style='text-align: center; opacity: 0.65; font-size: 12px;'>
     💰 Finance Dashboard Pro | Personal private account | Made with ❤️ using Streamlit
     </div>
     """,
