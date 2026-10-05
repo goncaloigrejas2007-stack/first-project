@@ -1,14 +1,17 @@
 import html
-import os
-import sqlite3
-from contextlib import closing
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
+from analytics import (
+    calculate_budget_summary,
+    export_transactions_csv,
+    forecast_spending,
+    get_monthly_spending,
+    get_spending_insights,
+)
 from auth_manager import (
     get_user_settings,
     init_auth_db,
@@ -16,242 +19,23 @@ from auth_manager import (
     register_user,
     update_user_settings,
 )
-
-DB_PATH = Path(os.environ.get("FINANCE_DB_PATH", Path(__file__).resolve().parent / "finance_data.db"))
-DEFAULT_BUDGETS = {
-    "Food & Dining": 500,
-    "Transport": 150,
-    "Entertainment": 300,
-    "Utilities": 200,
-    "Health & Fitness": 150,
-    "Shopping": 250,
-    "Education": 200,
-    "Subscriptions": 100,
-    "Travel & Holidays": 400,
-    "Personal Care": 100,
-    "Other": 200,
-}
-
-
-def ensure_column(conn, table_name, column_name, column_sql):
-    columns = [row[1] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
-    if column_name not in columns:
-        conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_sql}")
-
-
-def init_db():
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        _init_db(conn)
-
-
-def _init_db(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL DEFAULT 0,
-            date TEXT NOT NULL,
-            amount REAL NOT NULL,
-            category TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT ''
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS budgets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL DEFAULT 0,
-            category TEXT NOT NULL,
-            value REAL NOT NULL,
-            UNIQUE(user_id, category)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS savings_goals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL DEFAULT 0,
-            name TEXT NOT NULL,
-            target REAL NOT NULL,
-            saved REAL NOT NULL DEFAULT 0,
-            description TEXT NOT NULL DEFAULT '',
-            UNIQUE(user_id, name)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS custom_categories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL DEFAULT 0,
-            name TEXT NOT NULL,
-            emoji TEXT NOT NULL DEFAULT '📦',
-            UNIQUE(user_id, name)
-        )
-        """
-    )
-
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets(user_id, category)")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_categories_user_name ON custom_categories(user_id, name)")
-    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_goals_user_name ON savings_goals(user_id, name)")
-
-    ensure_column(conn, "transactions", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
-    ensure_column(conn, "budgets", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
-    ensure_column(conn, "savings_goals", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
-    ensure_column(conn, "custom_categories", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
-
-    existing_budget_rows = conn.execute(
-        "SELECT category FROM budgets WHERE user_id = 0 GROUP BY category"
-    ).fetchall()
-    existing_budget_categories = {row[0] for row in existing_budget_rows}
-    for category, value in DEFAULT_BUDGETS.items():
-        if category not in existing_budget_categories:
-            conn.execute(
-                "INSERT INTO budgets (user_id, category, value) VALUES (?, ?, ?)",
-                (0, category, value),
-            )
-
-    conn.commit()
-
-
-def get_active_user_id():
-    return st.session_state.get("user_id")
-
-
-def get_transactions_df(user_id=None):
-    user_id = user_id if user_id is not None else get_active_user_id()
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        if user_id is None:
-            df = pd.read_sql_query(
-                "SELECT id, date, amount, category, description FROM transactions WHERE user_id = 0 ORDER BY date DESC, id DESC",
-                conn,
-            )
-        else:
-            df = pd.read_sql_query(
-                "SELECT id, date, amount, category, description FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC",
-                conn,
-                params=(user_id,),
-            )
-    if df.empty:
-        return pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
-
-def get_budget_df(user_id=None):
-    user_id = user_id if user_id is not None else get_active_user_id()
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        if user_id is None:
-            df = pd.read_sql_query(
-                "SELECT category, value FROM budgets WHERE user_id = 0 ORDER BY category ASC",
-                conn,
-            )
-        else:
-            df = pd.read_sql_query(
-                "SELECT category, value FROM budgets WHERE user_id = ? ORDER BY category ASC",
-                conn,
-                params=(user_id,),
-            )
-    return pd.DataFrame(columns=["category", "value"]) if df.empty else df
-
-
-def get_goals_df(user_id=None):
-    user_id = user_id if user_id is not None else get_active_user_id()
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        if user_id is None:
-            df = pd.read_sql_query(
-                "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = 0 ORDER BY name ASC",
-                conn,
-            )
-        else:
-            df = pd.read_sql_query(
-                "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = ? ORDER BY name ASC",
-                conn,
-                params=(user_id,),
-            )
-    if df.empty:
-        return pd.DataFrame(columns=["id", "name", "target", "saved", "description"])
-    return df
-
-
-def save_transaction(user_id, amount, category, description, date_value):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute(
-            """
-            INSERT INTO transactions (user_id, date, amount, category, description)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (int(user_id), str(date_value), float(amount), category, description.strip() or "No description"),
-        )
-        conn.commit()
-
-
-def update_transaction(user_id, transaction_id, amount, category, description, date_value):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute(
-            """
-            UPDATE transactions
-            SET date = ?, amount = ?, category = ?, description = ?
-            WHERE id = ? AND user_id = ?
-            """,
-            (str(date_value), float(amount), category, description.strip() or "No description", int(transaction_id), int(user_id)),
-        )
-        conn.commit()
-
-
-def delete_transaction(user_id, transaction_id):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (int(transaction_id), int(user_id)))
-        conn.commit()
-
-
-def save_budget(user_id, category, value):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute(
-            """
-            INSERT INTO budgets (user_id, category, value)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, category) DO UPDATE SET value = excluded.value
-            """,
-            (int(user_id), category, float(value)),
-        )
-        conn.commit()
-
-
-def add_custom_category(user_id, name, emoji="📦"):
-    name = name.strip()
-    if not name or len(name) > 40 or name.casefold() == "income":
-        return False
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        cursor = conn.execute(
-            "INSERT OR IGNORE INTO custom_categories (user_id, name, emoji) VALUES (?, ?, ?)",
-            (int(user_id), name, emoji),
-        )
-        if cursor.rowcount == 0:
-            return False
-        conn.commit()
-    return True
-
-
-def get_all_categories(user_id=None):
-    user_id = user_id if user_id is not None else get_active_user_id()
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        budget_categories = [
-            row[0] for row in conn.execute(
-                "SELECT category FROM budgets WHERE user_id = ? UNION SELECT category FROM budgets WHERE user_id = 0",
-                (int(user_id),) if user_id is not None else (0,),
-            ).fetchall()
-        ]
-        custom_categories = [
-            row[0] for row in conn.execute(
-                "SELECT name FROM custom_categories WHERE user_id = ? UNION SELECT name FROM custom_categories WHERE user_id = 0",
-                (int(user_id),) if user_id is not None else (0,),
-            ).fetchall()
-        ]
-    all_categories = list(set(budget_categories + custom_categories + ["Income"]))
-    return sorted(all_categories)
+from db import (
+    DEFAULT_BUDGETS,
+    add_custom_category,
+    add_to_goal,
+    delete_goal,
+    delete_transaction,
+    get_all_categories,
+    get_budget_df,
+    get_goals_df,
+    get_transactions_df,
+    init_db,
+    save_budget,
+    save_goal,
+    save_transaction,
+    update_transaction,
+)
+from theme import THEMES, apply_theme, style_chart
 
 
 def render_add_transaction(user_id, prefix, show_category_manager):
@@ -427,189 +211,7 @@ def render_transactions_list(user_id, transactions_df):
         st.metric("Transactions", len(filtered_df))
 
 
-def save_goal(user_id, name, target, description=""):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute(
-            "INSERT INTO savings_goals (user_id, name, target, saved, description) VALUES (?, ?, ?, 0, ?)",
-            (int(user_id), name.strip(), float(target), description.strip()),
-        )
-        conn.commit()
-
-
-def add_to_goal(user_id, goal_id, amount):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute(
-            "UPDATE savings_goals SET saved = saved + ? WHERE id = ? AND user_id = ?",
-            (float(amount), int(goal_id), int(user_id)),
-        )
-        conn.commit()
-
-
-def delete_goal(user_id, goal_id):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        conn.execute("DELETE FROM savings_goals WHERE id = ? AND user_id = ?", (int(goal_id), int(user_id)))
-        conn.commit()
-
-
-def export_transactions_csv(df):
-    if df.empty:
-        return pd.DataFrame(columns=["date", "amount", "category", "description"]).to_csv(index=False).encode("utf-8")
-    return df[["date", "amount", "category", "description"]].copy().assign(
-        date=lambda x: x["date"].dt.strftime("%Y-%m-%d"),
-        amount=lambda x: x["amount"].map(lambda val: f"€{val:.2f}"),
-    ).to_csv(index=False).encode("utf-8")
-
-
-def calculate_budget_summary(df, user_id=None):
-    user_id = user_id if user_id is not None else get_active_user_id()
-    rows = []
-    for _, row in get_budget_df(user_id).iterrows():
-        category = row["category"]
-        budget_value = float(row["value"])
-        actual = 0.0
-        if not df.empty:
-            actual = df[df["category"] == category]["amount"].sum()
-        remaining = budget_value - actual
-        used_percent = (actual / budget_value * 100) if budget_value > 0 else 0
-        rows.append(
-            {
-                "category": category,
-                "budget": budget_value,
-                "actual": actual,
-                "remaining": remaining,
-                "used_percent": used_percent,
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def get_monthly_spending(df):
-    if df.empty:
-        return pd.DataFrame(columns=["month", "amount"])
-    monthly = df[df["category"] != "Income"].copy()
-    monthly["month"] = monthly["date"].dt.to_period("M").astype(str)
-    return monthly.groupby("month", as_index=False)["amount"].sum().sort_values("month")
-
-
-def forecast_spending(df, days_ahead=30):
-    if df.empty:
-        return None
-    expense_df = df[df["category"] != "Income"].copy()
-    expense_days = expense_df["date"].dt.date.nunique()
-    if expense_df.empty or expense_days < 7:
-        return None
-    daily_avg = expense_df["amount"].sum() / expense_days
-    return daily_avg * days_ahead
-
-
-def get_spending_insights(df):
-    if df.empty:
-        return []
-    insights = []
-    expense_df = df[df["category"] != "Income"].copy()
-    if not expense_df.empty:
-        top_category = expense_df.groupby("category")["amount"].sum().idxmax()
-        top_amount = expense_df.groupby("category")["amount"].sum().max()
-        insights.append(f"💡 **Top spending category**: {top_category} (€{top_amount:.2f})")
-        avg_transaction = expense_df["amount"].mean()
-        max_transaction = expense_df["amount"].max()
-        if max_transaction > avg_transaction * 3:
-            insights.append(f"⚠️ **Large transaction**: €{max_transaction:.2f} - above average")
-        last_30 = df[df["date"] >= (datetime.now() - timedelta(days=30))]
-        if len(last_30) > 0:
-            avg_30 = last_30[last_30["category"] != "Income"]["amount"].mean() if not last_30[last_30["category"] != "Income"].empty else 0
-            if avg_30 > 0:
-                insights.append(f"📈 **Average transaction in the last 30 days**: €{avg_30:.2f}")
-    return insights
-
-
 st.set_page_config(page_title="Finance Dashboard Pro", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
-THEMES = {
-    "light": {
-        "background": "#ffffff",
-        "sidebar": "#f8fafc",
-        "surface": "#f9fafb",
-        "text": "#111827",
-        "muted": "#64748b",
-        "border": "#e5e7eb",
-        "input": "#ffffff",
-        "accent": "#4f46e5",
-        "insight": "#fff3cd",
-        "grid": "#e5e7eb",
-    },
-    "dark": {
-        "background": "#0f172a",
-        "sidebar": "#111827",
-        "surface": "#1f2937",
-        "text": "#e5e7eb",
-        "muted": "#9ca3af",
-        "border": "#374151",
-        "input": "#1f2937",
-        "accent": "#818cf8",
-        "insight": "#422006",
-        "grid": "#374151",
-    },
-}
-
-
-def apply_theme():
-    theme = st.session_state.get("theme", "light")
-    palette = THEMES.get(theme, THEMES["light"])
-    st.markdown(
-        f"""
-        <style>
-        .block-container {{ padding-top: 1.5rem; }}
-        .stApp {{ background-color: {palette['background']}; color: {palette['text']}; }}
-        [data-testid="stSidebar"] {{ background-color: {palette['sidebar']}; }}
-        [data-testid="stHeader"] {{ background-color: {palette['background']}; }}
-        .stApp, .stApp label, .stApp p, .stApp h1, .stApp h2, .stApp h3,
-        .stApp [data-testid="stMarkdown"], .stApp [data-testid="stCaptionContainer"] {{
-            color: {palette['text']};
-        }}
-        .stApp input, .stApp textarea, .stApp [data-baseweb="select"] > div {{
-            background-color: {palette['input']}; color: {palette['text']};
-            border-color: {palette['border']};
-        }}
-        .stApp [data-testid="stNumberInput"] button {{
-            color: {palette['text']}; background-color: {palette['surface']};
-        }}
-        .stApp [data-testid="stTabs"] button {{ color: {palette['text']}; }}
-        .stApp [data-testid="stTabs"] button[aria-selected="true"] {{
-            color: {palette['accent']}; border-bottom-color: {palette['accent']};
-        }}
-        [data-testid="stMetric"] {{
-            background: {palette['surface']}; border: 1px solid {palette['border']};
-            border-radius: 10px; padding: 10px;
-        }}
-        .insight-box {{
-            background: {palette['insight']}; color: {palette['text']};
-            border-left: 4px solid {palette['accent']}; padding: 12px;
-            border-radius: 5px; margin: 10px 0;
-        }}
-        .stDataFrame {{ color: {palette['text']}; }}
-        [data-testid="stDataFrame"] {{ border-color: {palette['border']}; }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def style_chart(chart):
-    palette = THEMES.get(st.session_state.get("theme", "light"), THEMES["light"])
-    return (
-        chart.configure(background=palette["background"])
-        .configure_axis(
-            labelColor=palette["text"],
-            titleColor=palette["text"],
-            gridColor=palette["grid"],
-            domainColor=palette["border"],
-            tickColor=palette["border"],
-        )
-        .configure_legend(labelColor=palette["text"], titleColor=palette["text"])
-        .configure_title(color=palette["text"])
-    )
-
-
 init_auth_db()
 init_db()
 
