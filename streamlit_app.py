@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
+import numpy as np
 
 import altair as alt
 import pandas as pd
@@ -8,16 +9,37 @@ import streamlit as st
 
 DB_PATH = Path(__file__).resolve().parent / "finance_data.db"
 DEFAULT_BUDGETS = {
-    "Food": 500,
+    "Food & Dining": 500,
     "Transport": 150,
     "Entertainment": 300,
     "Utilities": 200,
+    "Health & Fitness": 150,
+    "Shopping": 250,
+    "Education": 200,
+    "Subscriptions": 100,
+    "Travel & Holidays": 400,
+    "Personal Care": 100,
     "Other": 200,
 }
 DEFAULT_GOALS = {
     "Emergency Fund": 3000,
     "Travel": 2000,
     "New Laptop": 1500,
+}
+
+CATEGORY_EMOJIS = {
+    "Food & Dining": "🍔",
+    "Transport": "🚗",
+    "Entertainment": "🎬",
+    "Utilities": "💡",
+    "Health & Fitness": "🏃",
+    "Shopping": "🛍️",
+    "Education": "📚",
+    "Subscriptions": "📺",
+    "Travel & Holidays": "✈️",
+    "Personal Care": "💅",
+    "Income": "💰",
+    "Other": "📦",
 }
 
 
@@ -50,6 +72,14 @@ def init_db():
             target REAL NOT NULL,
             saved REAL NOT NULL DEFAULT 0,
             description TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS custom_categories (
+            name TEXT PRIMARY KEY,
+            emoji TEXT NOT NULL DEFAULT '📦'
         )
         """
     )
@@ -169,6 +199,27 @@ def save_budget(category, value):
     conn.close()
 
 
+def add_custom_category(name, emoji="📦"):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO custom_categories (name, emoji) VALUES (?, ?)",
+            (name, emoji),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        pass
+    conn.close()
+
+
+def get_all_categories():
+    conn = sqlite3.connect(DB_PATH)
+    budget_categories = [row[0] for row in conn.execute("SELECT category FROM budgets").fetchall()]
+    custom_categories = [row[0] for row in conn.execute("SELECT name FROM custom_categories").fetchall()]
+    conn.close()
+    return list(set(budget_categories + custom_categories + ["Income"]))
+
+
 def save_goal(name, target, description=""):
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -239,8 +290,49 @@ def get_monthly_spending(df):
     return monthly.groupby("month", as_index=False)["amount"].sum().sort_values("month")
 
 
+def forecast_spending(df, days_ahead=30):
+    """Simples previsão de gastos baseada na média"""
+    if df.empty or len(df) < 7:
+        return None
+    
+    expense_df = df[df["category"] != "Income"].copy()
+    daily_avg = expense_df["amount"].sum() / len(df["date"].unique()) if len(df["date"].unique()) > 0 else 0
+    
+    return daily_avg * days_ahead
+
+
+def get_spending_insights(df):
+    """Gera insights automáticos sobre gastos"""
+    if df.empty:
+        return []
+    
+    insights = []
+    expense_df = df[df["category"] != "Income"].copy()
+    
+    if not expense_df.empty:
+        top_category = expense_df.groupby("category")["amount"].sum().idxmax()
+        top_amount = expense_df.groupby("category")["amount"].sum().max()
+        insights.append(f"💡 **Maior gasto**: {top_category} (€{top_amount:.2f})")
+        
+        avg_transaction = expense_df["amount"].mean()
+        max_transaction = expense_df["amount"].max()
+        if max_transaction > avg_transaction * 3:
+            insights.append(f"⚠️ **Transação grande**: €{max_transaction:.2f} - significativamente acima da média")
+        
+        last_7_days = df[df["date"] >= (datetime.now() - timedelta(days=7))]
+        last_30_days = df[df["date"] >= (datetime.now() - timedelta(days=30))]
+        
+        if len(last_7_days) > 0 and len(last_30_days) > 0:
+            avg_7 = last_7_days[last_7_days["category"] != "Income"]["amount"].mean()
+            avg_30 = last_30_days[last_30_days["category"] != "Income"]["amount"].mean()
+            if avg_7 > avg_30 * 1.2:
+                insights.append(f"📈 **Tendência**: Gastos acima da média este mês")
+    
+    return insights
+
+
 st.set_page_config(
-    page_title="💰 Finance Dashboard",
+    page_title="💰 Finance Dashboard Pro",
     page_icon="💰",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -258,6 +350,13 @@ st.markdown(
         border-radius: 10px;
         padding: 10px;
     }
+    .insight-box {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 12px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -267,15 +366,25 @@ init_db()
 
 with st.sidebar:
     st.title("➕ Add Transaction")
+    
+    # Selector para adicionar categoria customizada
+    with st.expander("🏷️ Manage Categories"):
+        new_cat = st.text_input("Nova categoria")
+        new_emoji = st.selectbox("Emoji", ["🍔", "🚗", "🎬", "💡", "🏃", "🛍️", "📚", "📺", "✈️", "💅", "📦", "🏥", "🎮", "📱", "👕"])
+        if st.button("Add Category"):
+            if new_cat:
+                add_custom_category(new_cat, new_emoji)
+                save_budget(new_cat, 100)
+                st.success("Categoria adicionada!")
+                st.rerun()
+    
     with st.form("transaction_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             amount = st.number_input("Amount (€)", min_value=0.0, step=0.01)
         with col2:
-            category = st.selectbox(
-                "Category",
-                ["Food", "Transport", "Entertainment", "Utilities", "Other", "Income"],
-            )
+            categories = get_all_categories()
+            category = st.selectbox("Category", categories)
 
         description = st.text_input("Description")
         date_value = st.date_input("Date", datetime.now())
@@ -287,7 +396,7 @@ with st.sidebar:
             st.sidebar.success("Transaction saved!")
             st.rerun()
 
-st.title("💰 Personal Finance Dashboard")
+st.title("💰 Personal Finance Dashboard Pro")
 
 transactions_df = get_transactions_df()
 expense_df = transactions_df[transactions_df["category"] != "Income"].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
@@ -309,7 +418,7 @@ else:
     month_spending = current_month[current_month["category"] != "Income"]["amount"].sum()
     month_income = current_month[current_month["category"] == "Income"]["amount"].sum()
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.metric("💸 Total Spending", f"€{total_spending:.2f}")
 with col2:
@@ -322,11 +431,24 @@ with col3:
     )
 with col4:
     st.metric("📊 Avg Transaction", f"€{avg_transaction:.2f}")
+with col5:
+    forecast = forecast_spending(transactions_df, 30)
+    if forecast:
+        st.metric("📈 30-Day Forecast", f"€{forecast:.2f}")
+
+# Insights automáticos
+if not transactions_df.empty:
+    insights = get_spending_insights(transactions_df)
+    if insights:
+        st.divider()
+        st.subheader("🔍 Smart Insights")
+        for insight in insights:
+            st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
 
 st.divider()
 
-overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab = st.tabs(
-    ["📊 Overview", "📈 Analytics", "🎯 Budget", "💼 Savings", "📋 Transactions"]
+overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, comparison_tab = st.tabs(
+    ["📊 Overview", "📈 Analytics", "🎯 Budget", "💼 Savings", "📋 Transactions", "📊 Comparison"]
 )
 
 with overview_tab:
@@ -334,7 +456,7 @@ with overview_tab:
     if transactions_df.empty:
         st.info("👉 Add your first transaction from the sidebar to start tracking your finances.")
     else:
-        recent = transactions_df.sort_values("date", ascending=False).head(10).copy()
+        recent = transactions_df.sort_values("date", ascending=False).head(15).copy()
         recent["date"] = recent["date"].dt.strftime("%d/%m/%Y")
         recent["amount"] = recent["amount"].apply(lambda x: f"€{x:.2f}")
         st.dataframe(recent, use_container_width=True, hide_index=True)
@@ -350,10 +472,11 @@ with overview_tab:
         st.subheader("📈 Monthly Spending Trend")
         monthly_spending_df = get_monthly_spending(transactions_df)
         if not monthly_spending_df.empty:
-            trend_chart = alt.Chart(monthly_spending_df).mark_line(point=True).encode(
+            trend_chart = alt.Chart(monthly_spending_df).mark_line(point=True, size=3).encode(
                 x=alt.X("month:N", title="Month"),
                 y=alt.Y("amount:Q", title="Amount (€)"),
                 tooltip=["month", "amount"],
+                color=alt.value("#4f46e5"),
             ).interactive()
             st.altair_chart(trend_chart, use_container_width=True)
 
@@ -385,6 +508,28 @@ with analytics_tab:
                     tooltip=["category", "amount"],
                 ).interactive()
                 st.altair_chart(pie_chart, use_container_width=True)
+
+            st.divider()
+            
+            # Estatísticas Avançadas
+            st.subheader("📊 Advanced Statistics")
+            stats_col1, stats_col2, stats_col3, stats_col4 = st.columns(4)
+            
+            with stats_col1:
+                median = expense_df["amount"].median()
+                st.metric("📉 Median Transaction", f"€{median:.2f}")
+            
+            with stats_col2:
+                std_dev = expense_df["amount"].std()
+                st.metric("📊 Std Deviation", f"€{std_dev:.2f}")
+            
+            with stats_col3:
+                max_trans = expense_df["amount"].max()
+                st.metric("📈 Highest", f"€{max_trans:.2f}")
+            
+            with stats_col4:
+                min_trans = expense_df[expense_df["amount"] > 0]["amount"].min() if not expense_df.empty else 0
+                st.metric("📉 Lowest", f"€{min_trans:.2f}")
 
             st.divider()
             st.subheader("📅 Spending Trend (Last 30 days)")
@@ -448,7 +593,7 @@ with budget_tab:
     st.divider()
     st.subheader("📊 Budget vs Actual Spending")
 
-    current_month_df = transactions_df[transactions_df["date"].dt.month == datetime.now().month].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
+    current_month_df = transactions_df[transactions_df["date"].dt.month == datetime.now().month].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category"])
     budget_summary_df = calculate_budget_summary(current_month_df)
 
     if budget_summary_df.empty:
@@ -492,6 +637,7 @@ with savings_tab:
             total_target = goals_df["target"].sum()
             total_saved = goals_df["saved"].sum()
             total_remaining = total_target - total_saved
+            completion_rate = (total_saved / total_target * 100) if total_target > 0 else 0
 
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -500,6 +646,10 @@ with savings_tab:
                 st.metric("💰 Saved", f"€{total_saved:.2f}")
             with c3:
                 st.metric("📌 Remaining", f"€{total_remaining:.2f}")
+
+            st.divider()
+            st.write(f"**Overall Progress: {completion_rate:.1f}%**")
+            st.progress(min(completion_rate / 100, 1.0))
 
             st.divider()
 
@@ -636,14 +786,14 @@ with transactions_tab:
             )
 
             row = filtered_df[filtered_df["id"] == transaction_id].iloc[0]
-            transaction_categories = ["Food", "Transport", "Entertainment", "Utilities", "Other", "Income"]
+            transaction_categories = get_all_categories()
 
             with st.form("edit_transaction_form"):
                 edit_amount = st.number_input("Edit Amount (€)", min_value=0.0, value=float(row["amount"]), step=0.01)
                 edit_category = st.selectbox(
                     "Edit Category",
                     transaction_categories,
-                    index=transaction_categories.index(row["category"]),
+                    index=transaction_categories.index(row["category"]) if row["category"] in transaction_categories else 0,
                 )
                 edit_description = st.text_input("Edit Description", value=row["description"])
                 edit_date = st.date_input("Edit Date", value=row["date"].date())
@@ -682,11 +832,47 @@ with transactions_tab:
         with col4:
             st.metric("Transactions", count)
 
+with comparison_tab:
+    st.subheader("📊 Category Comparison Over Time")
+    
+    if transactions_df.empty:
+        st.info("Add transactions to see comparisons.")
+    else:
+        expense_df_comp = transactions_df[transactions_df["category"] != "Income"].copy()
+        
+        if not expense_df_comp.empty:
+            expense_df_comp["month"] = expense_df_comp["date"].dt.to_period("M").astype(str)
+            
+            category_month = expense_df_comp.groupby(["month", "category"], as_index=False)["amount"].sum()
+            
+            comparison_chart = alt.Chart(category_month).mark_line(point=True).encode(
+                x=alt.X("month:N", title="Month"),
+                y=alt.Y("amount:Q", title="Amount (€)"),
+                color=alt.Color("category:N", title="Category"),
+                tooltip=["month", "category", "amount"],
+            ).interactive()
+            
+            st.altair_chart(comparison_chart, use_container_width=True)
+            
+            st.divider()
+            st.subheader("🎯 Category Ranking by Total Spent")
+            
+            category_ranking = expense_df_comp.groupby("category", as_index=False)["amount"].sum().sort_values("amount", ascending=False)
+            
+            ranking_chart = alt.Chart(category_ranking).mark_bar().encode(
+                y=alt.Y("category:N", sort="-x", title="Category"),
+                x=alt.X("amount:Q", title="Total Amount (€)"),
+                color=alt.Color("amount:Q", scale=alt.Scale(scheme="blues")),
+                tooltip=["category", "amount"],
+            ).interactive()
+            
+            st.altair_chart(ranking_chart, use_container_width=True)
+
 st.divider()
 st.markdown(
     """
     <div style='text-align: center; color: #888; font-size: 12px;'>
-    💰 Personal Finance Dashboard | Made with ❤️ using Streamlit
+    💰 Personal Finance Dashboard Pro | Made with ❤️ using Streamlit
     </div>
     """,
     unsafe_allow_html=True,
