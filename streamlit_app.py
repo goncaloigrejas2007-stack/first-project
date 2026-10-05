@@ -1,5 +1,7 @@
+import html
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -29,25 +31,6 @@ DEFAULT_BUDGETS = {
     "Personal Care": 100,
     "Other": 200,
 }
-DEFAULT_GOALS = {
-    "Emergency Fund": 3000,
-    "Travel": 2000,
-    "New Laptop": 1500,
-}
-CATEGORY_EMOJIS = {
-    "Food & Dining": "🍔",
-    "Transport": "🚗",
-    "Entertainment": "🎬",
-    "Utilities": "💡",
-    "Health & Fitness": "🏃",
-    "Shopping": "🛍️",
-    "Education": "📚",
-    "Subscriptions": "📺",
-    "Travel & Holidays": "✈️",
-    "Personal Care": "💅",
-    "Income": "💰",
-    "Other": "📦",
-}
 
 
 def ensure_column(conn, table_name, column_name, column_sql):
@@ -57,7 +40,11 @@ def ensure_column(conn, table_name, column_name, column_sql):
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        _init_db(conn)
+
+
+def _init_db(conn):
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS transactions (
@@ -127,7 +114,6 @@ def init_db():
             )
 
     conn.commit()
-    conn.close()
 
 
 def get_active_user_id():
@@ -136,19 +122,18 @@ def get_active_user_id():
 
 def get_transactions_df(user_id=None):
     user_id = user_id if user_id is not None else get_active_user_id()
-    conn = sqlite3.connect(DB_PATH)
-    if user_id is None:
-        df = pd.read_sql_query(
-            "SELECT id, date, amount, category, description FROM transactions WHERE user_id = 0 ORDER BY date DESC, id DESC",
-            conn,
-        )
-    else:
-        df = pd.read_sql_query(
-            "SELECT id, date, amount, category, description FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC",
-            conn,
-            params=(user_id,),
-        )
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        if user_id is None:
+            df = pd.read_sql_query(
+                "SELECT id, date, amount, category, description FROM transactions WHERE user_id = 0 ORDER BY date DESC, id DESC",
+                conn,
+            )
+        else:
+            df = pd.read_sql_query(
+                "SELECT id, date, amount, category, description FROM transactions WHERE user_id = ? ORDER BY date DESC, id DESC",
+                conn,
+                params=(user_id,),
+            )
     if df.empty:
         return pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
     df["date"] = pd.to_datetime(df["date"])
@@ -157,132 +142,125 @@ def get_transactions_df(user_id=None):
 
 def get_budget_df(user_id=None):
     user_id = user_id if user_id is not None else get_active_user_id()
-    conn = sqlite3.connect(DB_PATH)
-    if user_id is None:
-        df = pd.read_sql_query(
-            "SELECT category, value FROM budgets WHERE user_id = 0 ORDER BY category ASC",
-            conn,
-        )
-    else:
-        df = pd.read_sql_query(
-            "SELECT category, value FROM budgets WHERE user_id = ? ORDER BY category ASC",
-            conn,
-            params=(user_id,),
-        )
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        if user_id is None:
+            df = pd.read_sql_query(
+                "SELECT category, value FROM budgets WHERE user_id = 0 ORDER BY category ASC",
+                conn,
+            )
+        else:
+            df = pd.read_sql_query(
+                "SELECT category, value FROM budgets WHERE user_id = ? ORDER BY category ASC",
+                conn,
+                params=(user_id,),
+            )
     return pd.DataFrame(columns=["category", "value"]) if df.empty else df
 
 
 def get_goals_df(user_id=None):
     user_id = user_id if user_id is not None else get_active_user_id()
-    conn = sqlite3.connect(DB_PATH)
-    if user_id is None:
-        df = pd.read_sql_query(
-            "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = 0 ORDER BY name ASC",
-            conn,
-        )
-    else:
-        df = pd.read_sql_query(
-            "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = ? ORDER BY name ASC",
-            conn,
-            params=(user_id,),
-        )
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        if user_id is None:
+            df = pd.read_sql_query(
+                "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = 0 ORDER BY name ASC",
+                conn,
+            )
+        else:
+            df = pd.read_sql_query(
+                "SELECT id, name, target, saved, description FROM savings_goals WHERE user_id = ? ORDER BY name ASC",
+                conn,
+                params=(user_id,),
+            )
     if df.empty:
         return pd.DataFrame(columns=["id", "name", "target", "saved", "description"])
     return df
 
 
 def save_transaction(user_id, amount, category, description, date_value):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        """
-        INSERT INTO transactions (user_id, date, amount, category, description)
-        VALUES (?, ?, ?, ?, ?)
-        """,
-        (int(user_id), str(date_value), float(amount), category, description.strip() or "No description"),
-    )
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            """
+            INSERT INTO transactions (user_id, date, amount, category, description)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (int(user_id), str(date_value), float(amount), category, description.strip() or "No description"),
+        )
+        conn.commit()
 
 
 def update_transaction(user_id, transaction_id, amount, category, description, date_value):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        """
-        UPDATE transactions
-        SET date = ?, amount = ?, category = ?, description = ?
-        WHERE id = ? AND user_id = ?
-        """,
-        (str(date_value), float(amount), category, description.strip() or "No description", int(transaction_id), int(user_id)),
-    )
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            """
+            UPDATE transactions
+            SET date = ?, amount = ?, category = ?, description = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (str(date_value), float(amount), category, description.strip() or "No description", int(transaction_id), int(user_id)),
+        )
+        conn.commit()
 
 
 def delete_transaction(user_id, transaction_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (int(transaction_id), int(user_id)))
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (int(transaction_id), int(user_id)))
+        conn.commit()
 
 
 def save_budget(user_id, category, value):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        """
-        INSERT INTO budgets (user_id, category, value)
-        VALUES (?, ?, ?)
-        ON CONFLICT(user_id, category) DO UPDATE SET value = excluded.value
-        """,
-        (int(user_id), category, float(value)),
-    )
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            """
+            INSERT INTO budgets (user_id, category, value)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, category) DO UPDATE SET value = excluded.value
+            """,
+            (int(user_id), category, float(value)),
+        )
+        conn.commit()
 
 
 def add_custom_category(user_id, name, emoji="📦"):
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        conn.execute(
+    name = name.strip()
+    if not name or len(name) > 40 or name.casefold() == "income":
+        return False
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        cursor = conn.execute(
             "INSERT OR IGNORE INTO custom_categories (user_id, name, emoji) VALUES (?, ?, ?)",
-            (int(user_id), name.strip(), emoji),
+            (int(user_id), name, emoji),
         )
+        if cursor.rowcount == 0:
+            return False
         conn.commit()
-    except sqlite3.IntegrityError:
-        pass
-    conn.close()
+    return True
 
 
 def get_all_categories(user_id=None):
     user_id = user_id if user_id is not None else get_active_user_id()
-    conn = sqlite3.connect(DB_PATH)
-    budget_categories = [
-        row[0] for row in conn.execute(
-            "SELECT category FROM budgets WHERE user_id = ? UNION SELECT category FROM budgets WHERE user_id = 0",
-            (int(user_id),) if user_id is not None else (0,),
-        ).fetchall()
-    ]
-    custom_categories = [
-        row[0] for row in conn.execute(
-            "SELECT name FROM custom_categories WHERE user_id = ? UNION SELECT name FROM custom_categories WHERE user_id = 0",
-            (int(user_id),) if user_id is not None else (0,),
-        ).fetchall()
-    ]
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        budget_categories = [
+            row[0] for row in conn.execute(
+                "SELECT category FROM budgets WHERE user_id = ? UNION SELECT category FROM budgets WHERE user_id = 0",
+                (int(user_id),) if user_id is not None else (0,),
+            ).fetchall()
+        ]
+        custom_categories = [
+            row[0] for row in conn.execute(
+                "SELECT name FROM custom_categories WHERE user_id = ? UNION SELECT name FROM custom_categories WHERE user_id = 0",
+                (int(user_id),) if user_id is not None else (0,),
+            ).fetchall()
+        ]
     all_categories = list(set(budget_categories + custom_categories + ["Income"]))
     return sorted(all_categories)
 
 
-def render_add_transaction(prefix, show_category_manager):
+def render_add_transaction(user_id, prefix, show_category_manager):
     st.subheader("➕ Add transaction")
     with st.form(f"{prefix}_transaction_form", clear_on_submit=True):
         amount = st.number_input(
             "Amount (€)", min_value=0.0, value=0.0, step=0.01, key=f"{prefix}_amount"
         )
-        category = st.selectbox(
-            "Category", get_all_categories(user_id), key=f"{prefix}_category"
-        )
+        category = st.selectbox("Category", get_all_categories(user_id), key=f"{prefix}_category")
         description = st.text_input("Description", key=f"{prefix}_description")
         date_value = st.date_input("Date", datetime.now(), key=f"{prefix}_date")
         submitted = st.form_submit_button(
@@ -293,7 +271,7 @@ def render_add_transaction(prefix, show_category_manager):
                 st.warning("Amount must be greater than 0")
             else:
                 save_transaction(user_id, amount, category, description, date_value)
-                st.session_state.transaction_saved = True
+                st.session_state.app_toast = "Transaction saved successfully!"
                 st.rerun()
 
     if show_category_manager:
@@ -305,38 +283,172 @@ def render_add_transaction(prefix, show_category_manager):
                 key=f"{prefix}_new_emoji",
             )
             if st.button("Add category", key=f"{prefix}_add_category"):
-                if new_category.strip():
-                    add_custom_category(user_id, new_category, new_emoji)
+                if not new_category.strip():
+                    st.warning("Enter a category name.")
+                elif len(new_category.strip()) > 40:
+                    st.warning("Category names must be 40 characters or fewer.")
+                elif new_category.strip().casefold() == "income":
+                    st.warning("Income is a reserved category.")
+                elif add_custom_category(user_id, new_category, new_emoji):
                     save_budget(user_id, new_category, 100.0)
-                    st.success("Category added.")
+                    st.session_state.app_toast = "Category added."
                     st.rerun()
+                else:
+                    st.warning("That category already exists.")
+
+
+def render_transactions_list(user_id, transactions_df):
+    st.subheader("📋 All transactions")
+    df = transactions_df.copy()
+    if df.empty:
+        st.info("No transactions to display yet.")
+        return
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        selected_categories = st.multiselect(
+            "Filter by category",
+            df["category"].unique(),
+            default=list(df["category"].unique()),
+        )
+    with col2:
+        date_range = st.date_input(
+            "Date range",
+            value=(df["date"].min().date(), df["date"].max().date()),
+        )
+    with col3:
+        sort_by = st.selectbox(
+            "Sort by",
+            ["Date (newest)", "Date (oldest)", "Amount (high)", "Amount (low)"],
+        )
+
+    filtered_df = df[df["category"].isin(selected_categories)].copy()
+    if len(date_range) == 2:
+        transaction_dates = filtered_df["date"].dt.date
+        filtered_df = filtered_df[
+            (transaction_dates >= date_range[0]) & (transaction_dates <= date_range[1])
+        ]
+
+    sort_options = {
+        "Date (newest)": ("date", False),
+        "Date (oldest)": ("date", True),
+        "Amount (high)": ("amount", False),
+        "Amount (low)": ("amount", True),
+    }
+    sort_column, ascending = sort_options[sort_by]
+    filtered_df = filtered_df.sort_values(sort_column, ascending=ascending)
+    display_df = filtered_df[["date", "amount", "category", "description"]].copy()
+    display_df["date"] = display_df["date"].dt.strftime("%d/%m/%Y")
+    display_df["amount"] = display_df["amount"].apply(lambda value: f"€{value:.2f}")
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.download_button(
+        "📤 Export filtered CSV",
+        export_transactions_csv(filtered_df),
+        file_name="filtered_transactions.csv",
+        mime="text/csv",
+    )
+
+    st.divider()
+    st.subheader("✏️ Edit or delete transaction")
+    if not filtered_df.empty:
+        transaction_id = st.selectbox(
+            "Choose transaction",
+            filtered_df["id"].tolist(),
+            format_func=lambda value: (
+                f"#{value} - "
+                f"{filtered_df.loc[filtered_df['id'] == value, 'category'].iloc[0]} - "
+                f"€{filtered_df.loc[filtered_df['id'] == value, 'amount'].iloc[0]:.2f}"
+            ),
+            key="edit_transaction_id",
+        )
+        row = filtered_df[filtered_df["id"] == transaction_id].iloc[0]
+        transaction_categories = get_all_categories(user_id)
+        with st.form("edit_transaction_form"):
+            edit_amount = st.number_input(
+                "Edit amount (€)",
+                min_value=0.0,
+                value=float(row["amount"]),
+                step=0.01,
+                key=f"edit_amount_{transaction_id}",
+            )
+            edit_category = st.selectbox(
+                "Edit category",
+                transaction_categories,
+                index=(
+                    transaction_categories.index(row["category"])
+                    if row["category"] in transaction_categories
+                    else 0
+                ),
+                key=f"edit_category_{transaction_id}",
+            )
+            edit_description = st.text_input(
+                "Edit description",
+                value=row["description"],
+                key=f"edit_description_{transaction_id}",
+            )
+            edit_date = st.date_input(
+                "Edit date",
+                value=row["date"].date(),
+                key=f"edit_date_{transaction_id}",
+            )
+            col_edit, col_delete = st.columns(2)
+            with col_edit:
+                save_edit = st.form_submit_button("💾 Save changes")
+            with col_delete:
+                delete_button = st.form_submit_button("🗑️ Delete")
+
+            if save_edit:
+                update_transaction(
+                    user_id,
+                    transaction_id,
+                    edit_amount,
+                    edit_category,
+                    edit_description,
+                    edit_date,
+                )
+                st.session_state.app_toast = "Transaction updated successfully!"
+                st.rerun()
+            if delete_button:
+                delete_transaction(user_id, transaction_id)
+                st.session_state.app_toast = "Transaction deleted."
+                st.rerun()
+
+    st.divider()
+    total = filtered_df[filtered_df["category"] != "Income"]["amount"].sum()
+    income = filtered_df[filtered_df["category"] == "Income"]["amount"].sum()
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total spending", f"€{total:.2f}")
+    with col2:
+        st.metric("Total income", f"€{income:.2f}")
+    with col3:
+        st.metric("Net", f"€{income - total:.2f}")
+    with col4:
+        st.metric("Transactions", len(filtered_df))
 
 
 def save_goal(user_id, name, target, description=""):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT INTO savings_goals (user_id, name, target, saved, description) VALUES (?, ?, ?, 0, ?)",
-        (int(user_id), name.strip(), float(target), description.strip()),
-    )
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            "INSERT INTO savings_goals (user_id, name, target, saved, description) VALUES (?, ?, ?, 0, ?)",
+            (int(user_id), name.strip(), float(target), description.strip()),
+        )
+        conn.commit()
 
 
 def add_to_goal(user_id, goal_id, amount):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "UPDATE savings_goals SET saved = saved + ? WHERE id = ? AND user_id = ?",
-        (float(amount), int(goal_id), int(user_id)),
-    )
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute(
+            "UPDATE savings_goals SET saved = saved + ? WHERE id = ? AND user_id = ?",
+            (float(amount), int(goal_id), int(user_id)),
+        )
+        conn.commit()
 
 
 def delete_goal(user_id, goal_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM savings_goals WHERE id = ? AND user_id = ?", (int(goal_id), int(user_id)))
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.execute("DELETE FROM savings_goals WHERE id = ? AND user_id = ?", (int(goal_id), int(user_id)))
+        conn.commit()
 
 
 def export_transactions_csv(df):
@@ -380,12 +492,13 @@ def get_monthly_spending(df):
 
 
 def forecast_spending(df, days_ahead=30):
-    if df.empty or len(df["date"].unique()) < 7:
+    if df.empty:
         return None
     expense_df = df[df["category"] != "Income"].copy()
-    if expense_df.empty:
+    expense_days = expense_df["date"].dt.date.nunique()
+    if expense_df.empty or expense_days < 7:
         return None
-    daily_avg = expense_df["amount"].sum() / len(df["date"].unique())
+    daily_avg = expense_df["amount"].sum() / expense_days
     return daily_avg * days_ahead
 
 
@@ -397,16 +510,16 @@ def get_spending_insights(df):
     if not expense_df.empty:
         top_category = expense_df.groupby("category")["amount"].sum().idxmax()
         top_amount = expense_df.groupby("category")["amount"].sum().max()
-        insights.append(f"💡 **Maior gasto**: {top_category} (€{top_amount:.2f})")
+        insights.append(f"💡 **Top spending category**: {top_category} (€{top_amount:.2f})")
         avg_transaction = expense_df["amount"].mean()
         max_transaction = expense_df["amount"].max()
         if max_transaction > avg_transaction * 3:
-            insights.append(f"⚠️ **Transação grande**: €{max_transaction:.2f} - acima da média")
+            insights.append(f"⚠️ **Large transaction**: €{max_transaction:.2f} - above average")
         last_30 = df[df["date"] >= (datetime.now() - timedelta(days=30))]
         if len(last_30) > 0:
             avg_30 = last_30[last_30["category"] != "Income"]["amount"].mean() if not last_30[last_30["category"] != "Income"].empty else 0
             if avg_30 > 0:
-                insights.append(f"📈 **Média dos últimos 30 dias**: €{avg_30:.2f}")
+                insights.append(f"📈 **Average transaction in the last 30 days**: €{avg_30:.2f}")
     return insights
 
 
@@ -496,12 +609,15 @@ def style_chart(chart):
         .configure_title(color=palette["text"])
     )
 
+
 init_auth_db()
 init_db()
 
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = ""
+
+
 def show_auth_page():
     st.title("💰 Finance Dashboard Pro")
     st.write("Login to access your private financial dashboard.")
@@ -572,8 +688,9 @@ with st.sidebar:
         st.rerun()
 
 apply_theme()
-if st.session_state.pop("transaction_saved", False):
-    st.toast("Transaction saved successfully!")
+toast_message = st.session_state.pop("app_toast", None)
+if toast_message:
+    st.toast(toast_message)
 
 st.title("💰 Personal Finance Dashboard Pro")
 transactions_df = get_transactions_df(user_id)
@@ -610,13 +727,15 @@ with col4:
     st.metric("📊 Avg transaction", f"€{avg_transaction:.2f}")
 with col5:
     forecast = forecast_spending(transactions_df, 30)
-    st.metric("📈 30-day forecast", f"€{forecast:.2f}" if forecast is not None else "€0.00")
+    st.metric("📈 30-day forecast", f"€{forecast:.2f}" if forecast is not None else "Not enough data")
+    if forecast is None:
+        st.caption("Forecast available after 7 days with expenses.")
 
 if not transactions_df.empty:
     st.divider()
     st.subheader("🔍 Smart insights")
     for insight in get_spending_insights(transactions_df):
-        st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='insight-box'>{html.escape(insight)}</div>", unsafe_allow_html=True)
 
 st.divider()
 overview_tab, analytics_tab, transactions_tab, budget_tab, savings_tab = st.tabs(
@@ -625,7 +744,7 @@ overview_tab, analytics_tab, transactions_tab, budget_tab, savings_tab = st.tabs
 
 with overview_tab:
     with st.expander("➕ Add transaction"):
-        render_add_transaction("ov", show_category_manager=False)
+        render_add_transaction(user_id, "ov", show_category_manager=False)
 
     st.subheader("📝 Recent transactions")
     if transactions_df.empty:
@@ -651,7 +770,7 @@ with overview_tab:
                 x=alt.X("month:N", title="Month"),
                 y=alt.Y("amount:Q", title="Amount (€)"),
                 tooltip=["month", "amount"],
-                color=alt.value("#4f46e5"),
+                color=alt.value(THEMES[st.session_state.get("theme", "light")]["accent"]),
             ).interactive()
             st.altair_chart(style_chart(trend_chart), use_container_width=True)
 
@@ -693,7 +812,8 @@ with analytics_tab:
                 st.metric("Lowest", f"€{expense_df[expense_df['amount'] > 0]['amount'].min():.2f}" if not expense_df[expense_df["amount"] > 0].empty else "€0.00")
 
 with transactions_tab:
-    render_add_transaction("tx", show_category_manager=True)
+    render_add_transaction(user_id, "tx", show_category_manager=True)
+    render_transactions_list(user_id, transactions_df)
 
 with budget_tab:
     st.subheader("🎯 Monthly budget")
@@ -707,6 +827,7 @@ with budget_tab:
     for _, row in budget_df.iterrows():
         budget_values[row["category"]] = st.number_input(
             f"{row['category']} (€)",
+            min_value=0.0,
             value=float(row["value"]),
             step=10.0,
             key=f"budget_{user_id}_{row['category']}",
@@ -715,13 +836,13 @@ with budget_tab:
     if st.button("💾 Save budget"):
         for category, value in budget_values.items():
             save_budget(user_id, category, value)
-        st.success("Budget updated successfully!")
+        st.session_state.app_toast = "Budget updated successfully!"
         st.rerun()
 
     if st.button("🔄 Reset budget"):
         for category, value in DEFAULT_BUDGETS.items():
             save_budget(user_id, category, value)
-        st.success("Budget reset to default values.")
+        st.session_state.app_toast = "Budget reset to default values."
         st.rerun()
 
     st.divider()
@@ -798,10 +919,16 @@ with savings_tab:
         goal_target = st.number_input("Target (€)", min_value=0.0, value=0.0, step=50.0)
         goal_description = st.text_input("Description (optional)")
         if st.form_submit_button("Add goal"):
-            if goal_name.strip():
-                save_goal(user_id, goal_name, goal_target, goal_description)
-                st.success("Goal added successfully")
-                st.rerun()
+            if goal_target <= 0:
+                st.warning("Target amount must be greater than 0.")
+            elif goal_name.strip():
+                try:
+                    save_goal(user_id, goal_name, goal_target, goal_description)
+                except sqlite3.IntegrityError:
+                    st.error("A goal with that name already exists.")
+                else:
+                    st.session_state.app_toast = "Goal added successfully."
+                    st.rerun()
             else:
                 st.warning("Please enter a goal name.")
 
@@ -817,8 +944,10 @@ with savings_tab:
                 goal_id = int(goals_for_contribution.loc[goals_for_contribution["name"] == selected_goal, "id"].iloc[0])
                 if contribution > 0:
                     add_to_goal(user_id, goal_id, contribution)
-                    st.success(f"Added €{contribution:.2f} to {selected_goal}.")
+                    st.session_state.app_toast = f"Added €{contribution:.2f} to {selected_goal}."
                     st.rerun()
+                else:
+                    st.warning("Contribution must be greater than 0.")
 
     st.subheader("Delete goal")
     goals_for_delete = get_goals_df(user_id)
@@ -829,107 +958,9 @@ with savings_tab:
         if st.button("Delete selected goal"):
             goal_id = int(goals_for_delete.loc[goals_for_delete["name"] == goal_to_delete, "id"].iloc[0])
             delete_goal(user_id, goal_id)
-            st.warning(f"Goal '{goal_to_delete}' deleted.")
+            st.session_state.app_toast = f"Goal '{goal_to_delete}' deleted."
             st.rerun()
 
-with transactions_tab:
-    st.subheader("📋 All transactions")
-    df = transactions_df.copy()
-    if df.empty:
-        st.info("No transactions to display yet.")
-    else:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            selected_categories = st.multiselect("Filter by category", df["category"].unique(), default=list(df["category"].unique()))
-        with c2:
-            date_range = st.date_input("Date range", value=(df["date"].min().date(), df["date"].max().date()))
-        with c3:
-            sort_by = st.selectbox("Sort by", ["Date (newest)", "Date (oldest)", "Amount (high)", "Amount (low)"])
-
-        filtered_df = df[df["category"].isin(selected_categories)].copy()
-        if len(date_range) == 2:
-            filtered_df = filtered_df[(filtered_df["date"] >= pd.to_datetime(date_range[0])) & (filtered_df["date"] <= pd.to_datetime(date_range[1]))]
-
-        if sort_by == "Date (newest)":
-            filtered_df = filtered_df.sort_values("date", ascending=False)
-        elif sort_by == "Date (oldest)":
-            filtered_df = filtered_df.sort_values("date", ascending=True)
-        elif sort_by == "Amount (high)":
-            filtered_df = filtered_df.sort_values("amount", ascending=False)
-        else:
-            filtered_df = filtered_df.sort_values("amount", ascending=True)
-
-        display_df = filtered_df[["date", "amount", "category", "description"]].copy()
-        display_df["date"] = display_df["date"].dt.strftime("%d/%m/%Y")
-        display_df["amount"] = display_df["amount"].apply(lambda x: f"€{x:.2f}")
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-        st.download_button("📤 Export filtered CSV", export_transactions_csv(filtered_df), file_name="filtered_transactions.csv", mime="text/csv")
-
-        st.divider()
-        st.subheader("✏️ Edit or delete transaction")
-        if not filtered_df.empty:
-            transaction_id = st.selectbox(
-                "Choose transaction",
-                filtered_df["id"].tolist(),
-                format_func=lambda x: f"#{x} - {filtered_df.loc[filtered_df['id'] == x, 'category'].iloc[0]} - €{filtered_df.loc[filtered_df['id'] == x, 'amount'].iloc[0]:.2f}",
-                key="edit_transaction_id",
-            )
-            row = filtered_df[filtered_df["id"] == transaction_id].iloc[0]
-            transaction_categories = get_all_categories(user_id)
-            with st.form("edit_transaction_form"):
-                edit_amount = st.number_input(
-                    "Edit amount (€)",
-                    min_value=0.0,
-                    value=float(row["amount"]),
-                    step=0.01,
-                    key=f"edit_amount_{transaction_id}",
-                )
-                edit_category = st.selectbox(
-                    "Edit category",
-                    transaction_categories,
-                    index=transaction_categories.index(row["category"]) if row["category"] in transaction_categories else 0,
-                    key=f"edit_category_{transaction_id}",
-                )
-                edit_description = st.text_input(
-                    "Edit description",
-                    value=row["description"],
-                    key=f"edit_description_{transaction_id}",
-                )
-                edit_date = st.date_input(
-                    "Edit date",
-                    value=row["date"].date(),
-                    key=f"edit_date_{transaction_id}",
-                )
-                c_edit, c_delete = st.columns(2)
-                with c_edit:
-                    save_edit = st.form_submit_button("💾 Save changes")
-                with c_delete:
-                    delete_button = st.form_submit_button("🗑️ Delete")
-
-                if save_edit:
-                    update_transaction(user_id, transaction_id, edit_amount, edit_category, edit_description, edit_date)
-                    st.success("Transaction updated successfully!")
-                    st.rerun()
-                if delete_button:
-                    delete_transaction(user_id, transaction_id)
-                    st.warning("Transaction deleted.")
-                    st.rerun()
-
-        st.divider()
-        total = filtered_df[filtered_df["category"] != "Income"]["amount"].sum()
-        income = filtered_df[filtered_df["category"] == "Income"]["amount"].sum()
-        net = income - total
-        count = len(filtered_df)
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("Total spending", f"€{total:.2f}")
-        with c2:
-            st.metric("Total income", f"€{income:.2f}")
-        with c3:
-            st.metric("Net", f"€{net:.2f}")
-        with c4:
-            st.metric("Transactions", count)
 st.divider()
 st.markdown(
     """
