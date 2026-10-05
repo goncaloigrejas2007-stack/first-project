@@ -80,12 +80,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-4. **Run the application**
+4. **Enable the AI assistant (optional)**
+   Copy `.env.example` to `.env` and replace the example value with your Groq API key.
+
+5. **Run the application**
 ```bash
 streamlit run streamlit_app.py
 ```
 
-5. **Open in browser**
+6. **Open in browser**
 The app will automatically open at `http://localhost:8501`
 
 ---
