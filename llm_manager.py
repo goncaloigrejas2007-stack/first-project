@@ -1,135 +1,212 @@
-import os
-from dotenv import load_dotenv
-import streamlit as st
+import sqlite3
+from datetime import datetime
+from pathlib import Path
 
-load_dotenv()
+import bcrypt
 
-# Try to import Groq, fallback to mock if not available
-try:
-    from groq import Groq
-    GROQ_AVAILABLE = True
-except ImportError:
-    GROQ_AVAILABLE = False
+DB_PATH = Path(__file__).resolve().parent / "users.db"
 
 
-class LLMManager:
-    def __init__(self, api_key: str = None, model: str = "groq"):
-        self.model = model
-        
-        if model == "groq":
-            if not GROQ_AVAILABLE:
-                raise ImportError("Groq library not installed. Install with: pip install groq")
-            
-            self.api_key = api_key or os.getenv("GROQ_API_KEY")
-            if not self.api_key:
-                raise ValueError("GROQ_API_KEY not found in environment variables")
-            
-            self.client = Groq(api_key=self.api_key)
-        else:
-            raise ValueError(f"Unsupported model: {model}")
-    
-    def chat(self, messages: list, temperature: float = 0.7, max_tokens: int = 1000) -> str:
-        """Send message to LLM and get response"""
-        try:
-            if self.model == "groq":
-                response = self.client.chat.completions.create(
-                    model="mixtral-8x7b-32768",
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+def normalize_username(value: str) -> str:
+    return (value or "").strip()
+
+
+def normalize_email(value: str) -> str:
+    return (value or "").strip().lower()
+
+
+def init_auth_db():
+    """Initialize authentication database"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_login TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id INTEGER PRIMARY KEY,
+            theme TEXT DEFAULT 'light',
+            llm_model TEXT DEFAULT 'groq',
+            notifications_enabled INTEGER DEFAULT 1,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_ci ON users (LOWER(username))"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_ci ON users (LOWER(email))"
+    )
+    conn.commit()
+    conn.close()
+
+
+def hash_password(password: str) -> str:
+    """Hash password using bcrypt"""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against hash"""
+    return bcrypt.checkpw(password.encode(), password_hash.encode())
+
+
+def register_user(username: str, email: str, password: str) -> dict:
+    """Register new user"""
+    username = normalize_username(username)
+    email = normalize_email(email)
+    password = (password or "").strip()
+
+    if not username or not email or not password:
+        return {"success": False, "message": "Username, email and password are required."}
+    if len(password) < 6:
+        return {"success": False, "message": "Password must be at least 6 characters long."}
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        password_hash = hash_password(password)
+
+        conn.execute(
+            """
+            INSERT INTO users (username, email, password_hash, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (username, email, password_hash, datetime.now().isoformat()),
+        )
+
+        user_id = conn.lastrowid
+        conn.execute(
+            "INSERT INTO user_settings (user_id) VALUES (?)",
+            (user_id,),
+        )
+
+        conn.commit()
+        conn.close()
+        return {"success": True, "message": "User registered successfully!", "user_id": user_id}
+    except sqlite3.IntegrityError as e:
+        if "username" in str(e).lower():
+            return {"success": False, "message": "Username already exists"}
+        if "email" in str(e).lower():
+            return {"success": False, "message": "Email already exists"}
+        return {"success": False, "message": str(e)}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+
+
+def login_user(username: str, password: str) -> dict:
+    """Authenticate user"""
+    username = normalize_username(username)
+    password = (password or "").strip()
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT id, password_hash, email FROM users WHERE LOWER(username) = LOWER(?)",
+            (username,),
+        )
+
+        result = cursor.fetchone()
+        if result is None:
+            conn.close()
+            return {"success": False, "message": "User not found"}
+
+        user_id, password_hash, email = result
+
+        if verify_password(password, password_hash):
+            conn.execute(
+                "UPDATE users SET last_login = ? WHERE id = ?",
+                (datetime.now().isoformat(), user_id),
+            )
+            conn.commit()
+            conn.close()
+            return {
+                "success": True,
+                "message": "Login successful!",
+                "user_id": user_id,
+                "username": username,
+                "email": email,
+            }
+
+        conn.close()
+        return {"success": False, "message": "Invalid password"}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+
+
+def get_user_by_id(user_id: int) -> dict:
+    """Get user info by ID"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, username, email, created_at, last_login FROM users WHERE id = ?",
+            (user_id,),
+        )
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "id": result[0],
+                "username": result[1],
+                "email": result[2],
+                "created_at": result[3],
+                "last_login": result[4],
+            }
+        return None
+    except Exception:
+        return None
+
+
+def get_user_settings(user_id: int) -> dict:
+    """Get user settings"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT theme, llm_model, notifications_enabled FROM user_settings WHERE user_id = ?",
+            (user_id,),
+        )
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "theme": result[0],
+                "llm_model": result[1],
+                "notifications_enabled": result[2],
+            }
+        return {"theme": "light", "llm_model": "groq", "notifications_enabled": 1}
+    except Exception:
+        return {"theme": "light", "llm_model": "groq", "notifications_enabled": 1}
+
+
+def update_user_settings(user_id: int, settings: dict) -> bool:
+    """Update user settings"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        for key, value in settings.items():
+            if key in ["theme", "llm_model", "notifications_enabled"]:
+                conn.execute(
+                    f"UPDATE user_settings SET {key} = ? WHERE user_id = ?",
+                    (value, user_id),
                 )
-                return response.choices[0].message.content
-        except Exception as e:
-            return f"Error communicating with LLM: {str(e)}"
-    
-    def get_financial_advice(self, user_data: dict) -> str:
-        """Get personalized financial advice based on user data"""
-        total_spending = user_data.get("total_spending", 0)
-        total_income = user_data.get("total_income", 0)
-        monthly_spending = user_data.get("monthly_spending", 0)
-        category_breakdown = user_data.get("category_breakdown", {})
-        
-        prompt = f"""Baseado nos seguintes dados financeiros, fornece conselhos práticos e acionáveis:
-
-- Gasto Total: €{total_spending:.2f}
-- Renda Total: €{total_income:.2f}
-- Gasto Este Mês: €{monthly_spending:.2f}
-- Saldo Líquido: €{total_income - total_spending:.2f}
-- Distribuição por Categoria: {category_breakdown}
-
-Por favor, fornece:
-1. Uma análise dos padrões de gasto
-2. 3 recomendações específicas para melhorar as finanças
-3. Áreas de preocupação ou oportunidades de economizar
-
-Responde em português e mantém um tom amigável e motivador."""
-
-        messages = [
-            {
-                "role": "system",
-                "content": "Você é um consultor financeiro especializado em gestão de finanças pessoais. Fornece conselhos práticos, específicos e motivadores.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-        
-        return self.chat(messages, temperature=0.5)
-    
-    def analyze_spending_pattern(self, transactions: list) -> str:
-        """Analyze spending patterns and provide insights"""
-        if not transactions:
-            return "Sem transações para analisar."
-        
-        prompt = f"""Analisa os seguintes padrões de gastos e fornece insights:
-
-Transações: {str(transactions[:10])}  # Últimas 10
-
-Por favor, identifica:
-1. Padrões recorrentes
-2. Oportunidades de economizar
-3. Categorias com gasto excessivo
-
-Responde em português, de forma concisa."""
-
-        messages = [
-            {
-                "role": "system",
-                "content": "Você é um analista financeiro que identifica padrões em dados de gastos.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-        
-        return self.chat(messages, temperature=0.3)
-    
-    def get_budget_recommendations(self, income: float, current_budget: dict) -> str:
-        """Get budget recommendations based on income and current allocations"""
-        prompt = f"""Baseado numa renda mensal de €{income:.2f} e orçamento atual:
-{str(current_budget)}
-
-Fornece recomendações de orçamento otimizadas seguindo a regra 50/30/20:
-- 50% necessidades
-- 30% desejos
-- 20% poupanças
-
-Responde em português com sugestões específicas."""
-
-        messages = [
-            {
-                "role": "system",
-                "content": "Você é um especialista em planejamento orçamentário que usa a regra 50/30/20.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-        
-        return self.chat(messages, temperature=0.6)
-
-
-def get_llm_manager() -> LLMManager:
-    """Get or create LLM manager instance"""
-    if "llm_manager" not in st.session_state:
-        try:
-            st.session_state.llm_manager = LLMManager(model="groq")
-        except Exception as e:
-            st.error(f"Erro ao inicializar LLM: {str(e)}")
-            st.info("Certifique-se de que definiu GROQ_API_KEY na sua variável de ambiente")
-            return None
-    return st.session_state.llm_manager
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False

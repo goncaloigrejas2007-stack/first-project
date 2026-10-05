@@ -108,7 +108,6 @@ def init_db():
     ensure_column(conn, "savings_goals", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "custom_categories", "user_id", "user_id INTEGER NOT NULL DEFAULT 0")
 
-    # Normalize any historical duplicates before creating the unique indexes required by upserts.
     conn.execute(
         """
         DELETE FROM budgets
@@ -173,7 +172,7 @@ def get_transactions_df(user_id=None):
     conn.close()
     if df.empty:
         return pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
-    df["date"] = pd.to_datetime(df["date"])
+    df["date"] = pd.to_datetime(df["date"]) 
     return df
 
 
