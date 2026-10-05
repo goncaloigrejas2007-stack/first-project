@@ -1,9 +1,16 @@
+import logging
+import re
 import sqlite3
 from datetime import datetime
 from pathlib import Path
 
 import bcrypt
 
+logger = logging.getLogger(__name__)
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+INVALID_LOGIN = "Invalid username or password."
+GENERIC_ERROR = "Something went wrong. Please try again."
 DB_PATH = Path(__file__).resolve().parent / "users.db"
 
 
@@ -67,6 +74,20 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+def validate_password(password: str):
+    """Return an error message if the password is weak, otherwise None"""
+    if len(password) < 8:
+        return "Password must be at least 8 characters."
+    if len(password.encode()) > 72:
+        return "Password must be at most 72 bytes."
+    if not (re.search(r"[A-Za-z]", password) and re.search(r"\d", password)):
+        return "Password must contain at least one letter and one number."
+    return None
+
+
+DUMMY_HASH = hash_password("dummy-password-for-timing")
+
+
 def register_user(username: str, email: str, password: str) -> dict:
     """Register new user with validation"""
     username = normalize_username(username)
@@ -79,18 +100,19 @@ def register_user(username: str, email: str, password: str) -> dict:
     
     if len(username) < 3:
         return {"success": False, "message": "Username must be at least 3 characters."}
-    
-    if len(password) < 6:
-        return {"success": False, "message": "Password must be at least 6 characters."}
-    
-    if "@" not in email or "." not in email:
+
+    password_error = validate_password(password)
+    if password_error:
+        return {"success": False, "message": password_error}
+
+    if not EMAIL_RE.match(email):
         return {"success": False, "message": "Invalid email format."}
 
     try:
         conn = sqlite3.connect(DB_PATH)
         password_hash = hash_password(password)
 
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO users (username, email, password_hash, created_at)
             VALUES (?, ?, ?, ?)
@@ -98,7 +120,7 @@ def register_user(username: str, email: str, password: str) -> dict:
             (username, email, password_hash, datetime.now().isoformat()),
         )
 
-        user_id = conn.lastrowid
+        user_id = cursor.lastrowid
 
         # Add default settings
         conn.execute(
@@ -115,14 +137,11 @@ def register_user(username: str, email: str, password: str) -> dict:
             "user_id": user_id,
         }
     except sqlite3.IntegrityError as e:
-        error_msg = str(e).lower()
-        if "username" in error_msg:
-            return {"success": False, "message": "Username already exists. Choose another."}
-        elif "email" in error_msg:
-            return {"success": False, "message": "Email already registered. Try logging in."}
-        return {"success": False, "message": "Registration failed. Try again."}
-    except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+        conn.close()
+        return {"success": False, "message": "Username or email is already in use."}
+    except Exception:
+        logger.exception("Registration failed")
+        return {"success": False, "message": GENERIC_ERROR}
 
 
 def login_user(username: str, password: str) -> dict:
@@ -147,7 +166,8 @@ def login_user(username: str, password: str) -> dict:
 
         if result is None:
             conn.close()
-            return {"success": False, "message": "User not found."}
+            verify_password(password, DUMMY_HASH)
+            return {"success": False, "message": INVALID_LOGIN}
 
         user_id, password_hash, email, actual_username = result
 
@@ -169,10 +189,11 @@ def login_user(username: str, password: str) -> dict:
             }
         else:
             conn.close()
-            return {"success": False, "message": "Invalid password."}
+            return {"success": False, "message": INVALID_LOGIN}
 
-    except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+    except Exception:
+        logger.exception("Login failed")
+        return {"success": False, "message": GENERIC_ERROR}
 
 
 def get_user_by_id(user_id: int) -> dict:

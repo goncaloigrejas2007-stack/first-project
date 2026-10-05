@@ -13,6 +13,7 @@ from auth_manager import (
     register_user,
     update_user_settings,
 )
+from finance_utils import filter_month, validate_category_name, validate_positive
 from llm_manager import get_llm_manager
 
 DB_PATH = Path(__file__).resolve().parent / "finance_data.db"
@@ -194,6 +195,9 @@ def get_goals_df(user_id=None):
 
 
 def save_transaction(user_id, amount, category, description, date_value):
+    error = validate_positive(amount, "Amount")
+    if error:
+        raise ValueError(error)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         """
@@ -207,6 +211,9 @@ def save_transaction(user_id, amount, category, description, date_value):
 
 
 def update_transaction(user_id, transaction_id, amount, category, description, date_value):
+    error = validate_positive(amount, "Amount")
+    if error:
+        raise ValueError(error)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         """
@@ -228,6 +235,9 @@ def delete_transaction(user_id, transaction_id):
 
 
 def save_budget(user_id, category, value):
+    error = validate_positive(value, "Budget")
+    if error:
+        raise ValueError(error)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         """
@@ -275,6 +285,9 @@ def get_all_categories(user_id=None):
 
 
 def save_goal(user_id, name, target, description=""):
+    error = validate_positive(target, "Target")
+    if error:
+        raise ValueError(error)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "INSERT INTO savings_goals (user_id, name, target, saved, description) VALUES (?, ?, ?, 0, ?)",
@@ -285,6 +298,9 @@ def save_goal(user_id, name, target, description=""):
 
 
 def add_to_goal(user_id, goal_id, amount):
+    error = validate_positive(amount, "Contribution")
+    if error:
+        raise ValueError(error)
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
         "UPDATE savings_goals SET saved = saved + ? WHERE id = ? AND user_id = ?",
@@ -378,7 +394,6 @@ st.markdown(
     <style>
     .block-container { padding-top: 1.5rem; }
     .stMetric { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
-    .insight-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -477,7 +492,8 @@ else:
     total_income = transactions_df[transactions_df["category"] == "Income"]["amount"].sum()
     net_balance = total_income - total_spending
     avg_transaction = expense_df["amount"].mean() if not expense_df.empty else 0.0
-    current_month = transactions_df[transactions_df["date"].dt.month == datetime.now().month]
+    now = datetime.now()
+    current_month = filter_month(transactions_df, now.year, now.month)
     month_spending = current_month[current_month["category"] != "Income"]["amount"].sum()
     month_income = current_month[current_month["category"] == "Income"]["amount"].sum()
 
@@ -498,7 +514,7 @@ if not transactions_df.empty:
     st.divider()
     st.subheader("🔍 Smart insights")
     for insight in get_spending_insights(transactions_df):
-        st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
+        st.info(insight)
 
 st.divider()
 overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, ai_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions", "AI Assistant"])
@@ -579,7 +595,7 @@ with budget_tab:
 
     budget_values = {}
     for _, row in budget_df.iterrows():
-        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", value=float(row["value"]), step=10, key=f"budget_{user_id}_{row['category']}")
+        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", min_value=0.01, value=max(float(row["value"]), 0.01), step=10.0, key=f"budget_{user_id}_{row['category']}")
 
     if st.button("💾 Save budget"):
         for category, value in budget_values.items():
@@ -595,7 +611,7 @@ with budget_tab:
 
     st.divider()
     st.subheader("📊 Budget vs actual spending")
-    current_month_df = transactions_df[transactions_df["date"].dt.month == datetime.now().month].copy() if not transactions_df.empty else pd.DataFrame(columns=["id", "date", "amount", "category", "description"])
+    current_month_df = filter_month(transactions_df, datetime.now().year, datetime.now().month)
     budget_summary_df = calculate_budget_summary(current_month_df, user_id)
     if budget_summary_df.empty:
         st.info("No budget data available yet.")
@@ -656,13 +672,17 @@ with savings_tab:
     st.subheader("Create new goal")
     with st.form("goal_form", clear_on_submit=True):
         goal_name = st.text_input("Goal name")
-        goal_target = st.number_input("Target (€)", min_value=0.0, step=50.0)
+        goal_target = st.number_input("Target (€)", min_value=0.01, value=100.0, step=50.0)
         goal_description = st.text_input("Description (optional)")
         if st.form_submit_button("Add goal"):
             if goal_name.strip():
-                save_goal(user_id, goal_name, goal_target, goal_description)
-                st.success("Goal added successfully")
-                st.rerun()
+                try:
+                    save_goal(user_id, goal_name, goal_target, goal_description)
+                except (ValueError, sqlite3.IntegrityError):
+                    st.error("Could not add goal. Use a unique name and a positive target.")
+                else:
+                    st.success("Goal added successfully")
+                    st.rerun()
             else:
                 st.warning("Please enter a goal name.")
 
@@ -680,6 +700,8 @@ with savings_tab:
                     add_to_goal(user_id, goal_id, contribution)
                     st.success(f"Added €{contribution:.2f} to {selected_goal}.")
                     st.rerun()
+                else:
+                    st.warning("Contribution must be greater than zero.")
 
     st.subheader("Delete goal")
     goals_for_delete = get_goals_df(user_id)
@@ -738,7 +760,7 @@ with transactions_tab:
             row = filtered_df[filtered_df["id"] == transaction_id].iloc[0]
             transaction_categories = get_all_categories(user_id)
             with st.form("edit_transaction_form"):
-                edit_amount = st.number_input("Edit amount (€)", min_value=0.0, value=float(row["amount"]), step=0.01)
+                edit_amount = st.number_input("Edit amount (€)", min_value=0.01, value=max(float(row["amount"]), 0.01), step=0.01)
                 edit_category = st.selectbox("Edit category", transaction_categories, index=transaction_categories.index(row["category"]) if row["category"] in transaction_categories else 0)
                 edit_description = st.text_input("Edit description", value=row["description"])
                 edit_date = st.date_input("Edit date", value=row["date"].date())
@@ -784,18 +806,24 @@ with st.sidebar:
         description = st.text_input("Description")
         date_value = st.date_input("Date", datetime.now())
         submitted = st.form_submit_button("💾 Save transaction")
-        if submitted and amount > 0:
-            save_transaction(user_id, amount, category, description, date_value)
-            st.sidebar.success("Transaction saved!")
-            st.rerun()
+        if submitted:
+            if amount > 0:
+                save_transaction(user_id, amount, category, description, date_value)
+                st.sidebar.success("Transaction saved!")
+                st.rerun()
+            else:
+                st.error("Amount must be greater than zero.")
 
     with st.expander("🏷️ Manage categories"):
         new_category = st.text_input("New category")
         new_emoji = st.selectbox("Emoji", ["🍔", "🚗", "🎬", "💡", "🏃", "🛍️", "📚", "📺", "✈️", "💅", "📦", "🏥", "🎮", "📱", "👕"])
         if st.button("Add category"):
-            if new_category.strip():
+            category_error = validate_category_name(new_category)
+            if category_error:
+                st.error(category_error)
+            else:
                 add_custom_category(user_id, new_category, new_emoji)
-                save_budget(user_id, new_category, 100)
+                save_budget(user_id, new_category.strip(), 100)
                 st.success("Category added.")
                 st.rerun()
 
@@ -803,7 +831,7 @@ with ai_tab:
     st.subheader("🤖 Financial AI assistant")
     llm = get_llm_manager()
     if llm is None:
-        st.warning("Configure GROQ_API_KEY in environment variables or .env to enable AI assistant.")
+        st.warning("The AI assistant is disabled. Set GROQ_API_KEY in your environment or in a .env file (see .env.example) and restart the app to enable it.")
     else:
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
@@ -823,7 +851,7 @@ with ai_tab:
                 "monthly_spending": month_spending,
                 "category_breakdown": expense_df.groupby("category")["amount"].sum().to_dict() if not expense_df.empty else {},
             }
-            response = llm.get_financial_advice(finance_data)
+            response = llm.get_financial_advice(finance_data, prompt)
             st.session_state.chat_history.append({"role": "assistant", "content": response})
             with st.chat_message("assistant"):
                 st.markdown(response)

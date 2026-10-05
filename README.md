@@ -44,9 +44,9 @@ A modern, interactive personal finance dashboard built with Python and Streamlit
 - **Export Data** - Download filtered transactions as CSV
 
 ### 🗄️ Data Persistence
-- **SQLite Database** - All data is saved locally and persists between sessions
-- **No Cloud** - Your financial data stays on your computer
-- **Automatic Backup** - Database is created automatically on first run
+- **SQLite Databases** - All data is saved locally and persists between sessions
+- **User accounts** - Register/login; each user only sees their own data
+- **Optional AI assistant** - Enabled only when `GROQ_API_KEY` is set (see below)
 
 ---
 
@@ -85,7 +85,14 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-5. **Open in browser**
+5. **(Optional) Enable the AI assistant**
+```bash
+cp .env.example .env   # then edit .env and set GROQ_API_KEY
+```
+Without a key the AI tab shows a "disabled" message and the rest of the app works normally.
+When enabled, a summary of your totals and category spending is sent to Groq with your question.
+
+6. **Open in browser**
 The app will automatically open at `http://localhost:8501`
 
 ---
@@ -142,12 +149,15 @@ The app will automatically open at `http://localhost:8501`
 ```
 first-project/
 ├── streamlit_app.py          # Main application
+├── auth_manager.py           # Registration / login (bcrypt, users.db)
+├── llm_manager.py            # Optional Groq AI assistant
+├── finance_utils.py          # Pure helpers (month filter, validation)
+├── tests/                    # pytest tests
 ├── requirements.txt          # Python dependencies
-├── finance_data.db          # SQLite database (auto-generated)
-├── README.md                # Documentation
-├── .gitignore               # Git ignore rules
-└── .github/                 # GitHub configuration
-    └── ISSUE_TEMPLATE/      # Issue templates
+├── .env.example              # Environment variable template
+├── finance_data.db           # Finance data (auto-generated, git-ignored)
+├── users.db                  # User accounts (auto-generated, git-ignored)
+└── README.md                 # Documentation
 ```
 
 ---
@@ -161,7 +171,8 @@ first-project/
 | **Pandas** | Data manipulation and analysis |
 | **SQLite3** | Local database |
 | **Altair** | Interactive data visualizations |
-| **NumPy** | Numerical computations |
+| **bcrypt** | Password hashing |
+| **python-dotenv** | Loads `.env` |
 
 ---
 
@@ -181,12 +192,13 @@ You can customize these budgets in the Budget tab.
 
 ## 💾 Data Storage
 
-All your financial data is stored in a local SQLite database (`finance_data.db`). 
+Financial data is stored in `finance_data.db` and accounts in `users.db` (both local SQLite, git-ignored). Data is stored unencrypted on disk.
 
 **Key tables:**
 - `transactions` - All your income and expenses
 - `budgets` - Your monthly budget limits
 - `savings_goals` - Your financial goals and progress
+- `custom_categories` - Your own categories
 
 **Backup your data:**
 ```bash
@@ -210,7 +222,8 @@ cp finance_data.db finance_data.db.backup
 ## 🔐 Privacy & Security
 
 - 🔒 **No cloud storage** - Everything stays on your computer
-- 🔒 **No internet required** - Works completely offline
+- 🔒 **Offline by default** - Internet is only used if you enable the AI assistant
+- 🔒 **Passwords** - Hashed with bcrypt; minimum 8 characters with a letter and a number
 - 🔒 **No data sharing** - Your financial data is yours alone
 - 🔒 **Open source** - You can review the code anytime
 
@@ -221,7 +234,6 @@ cp finance_data.db finance_data.db.backup
 Planned features for upcoming versions:
 - [ ] Dark mode / Theme customization
 - [ ] Recurring transaction templates
-- [ ] Custom categories
 - [ ] CSV import for historical data
 - [ ] Advanced financial reports (PDF export)
 - [ ] Multi-currency support
@@ -233,9 +245,9 @@ Planned features for upcoming versions:
 ## 🐛 Known Issues
 
 Currently known limitations:
-- Data is stored in browser session memory unless explicitly saved
 - Limited to single-currency (EUR)
-- No built-in password protection
+- No password reset and no encryption of the database at rest
+- Login has no rate limiting
 
 ---
 
@@ -313,296 +325,8 @@ Created by **Gonçalo Igrejas**
 
 Made with ❤️ using Streamlit
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-a
-b
-c
+## 🧪 Tests
+
+```bash
+python -m pytest
+```
