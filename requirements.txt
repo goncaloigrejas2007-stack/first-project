@@ -1,1 +1,6 @@
-GROQ_API_KEY=your_groq_api_key_here
+altair>=5.0
+bcrypt>=4.1
+groq>=0.11
+pandas>=2.0
+python-dotenv>=1.0
+streamlit>=1.32
