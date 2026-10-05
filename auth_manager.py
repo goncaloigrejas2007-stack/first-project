@@ -37,7 +37,6 @@ def init_auth_db():
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id INTEGER PRIMARY KEY,
             theme TEXT DEFAULT 'light',
-            llm_model TEXT DEFAULT 'groq',
             notifications_enabled INTEGER DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
@@ -90,7 +89,7 @@ def register_user(username: str, email: str, password: str) -> dict:
         conn = sqlite3.connect(DB_PATH)
         password_hash = hash_password(password)
 
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO users (username, email, password_hash, created_at)
             VALUES (?, ?, ?, ?)
@@ -98,7 +97,7 @@ def register_user(username: str, email: str, password: str) -> dict:
             (username, email, password_hash, datetime.now().isoformat()),
         )
 
-        user_id = conn.lastrowid
+        user_id = cursor.lastrowid
 
         # Add default settings
         conn.execute(
@@ -209,7 +208,7 @@ def get_user_settings(user_id: int) -> dict:
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT theme, llm_model, notifications_enabled FROM user_settings WHERE user_id = ?",
+            "SELECT theme, notifications_enabled FROM user_settings WHERE user_id = ?",
             (user_id,),
         )
 
@@ -219,12 +218,11 @@ def get_user_settings(user_id: int) -> dict:
         if result:
             return {
                 "theme": result[0],
-                "llm_model": result[1],
-                "notifications_enabled": result[2],
+                "notifications_enabled": result[1],
             }
-        return {"theme": "light", "llm_model": "groq", "notifications_enabled": 1}
+        return {"theme": "light", "notifications_enabled": 1}
     except Exception:
-        return {"theme": "light", "llm_model": "groq", "notifications_enabled": 1}
+        return {"theme": "light", "notifications_enabled": 1}
 
 
 def update_user_settings(user_id: int, settings: dict) -> bool:
@@ -233,7 +231,7 @@ def update_user_settings(user_id: int, settings: dict) -> bool:
         conn = sqlite3.connect(DB_PATH)
 
         for key, value in settings.items():
-            if key in ["theme", "llm_model", "notifications_enabled"]:
+            if key in ["theme", "notifications_enabled"]:
                 conn.execute(
                     f"UPDATE user_settings SET {key} = ? WHERE user_id = ?",
                     (value, user_id),

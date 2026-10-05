@@ -45,6 +45,7 @@ A modern, interactive personal finance dashboard built with Python and Streamlit
 
 ### 🗄️ Data Persistence
 - **SQLite Database** - All data is saved locally and persists between sessions
+- **User Accounts** - Register and log in; each user only sees their own data
 - **No Cloud** - Your financial data stays on your computer
 - **Automatic Backup** - Database is created automatically on first run
 
@@ -142,12 +143,13 @@ The app will automatically open at `http://localhost:8501`
 ```
 first-project/
 ├── streamlit_app.py          # Main application
+├── auth_manager.py           # Registration, login (bcrypt) and user settings
 ├── requirements.txt          # Python dependencies
-├── finance_data.db          # SQLite database (auto-generated)
-├── README.md                # Documentation
-├── .gitignore               # Git ignore rules
-└── .github/                 # GitHub configuration
-    └── ISSUE_TEMPLATE/      # Issue templates
+├── .streamlit/config.toml    # Streamlit config (accent colour only, light/dark follows your choice)
+├── finance_data.db           # Finance database (auto-generated)
+├── users.db                  # Accounts database (auto-generated)
+├── README.md                 # Documentation
+└── .gitignore                # Git ignore rules
 ```
 
 ---
@@ -161,7 +163,13 @@ first-project/
 | **Pandas** | Data manipulation and analysis |
 | **SQLite3** | Local database |
 | **Altair** | Interactive data visualizations |
-| **NumPy** | Numerical computations |
+| **bcrypt** | Password hashing for user accounts |
+
+---
+
+## 🌗 Light / Dark Theme
+
+The app follows Streamlit's theme. Open the ⋮ menu (top right) → **Settings** → **Theme** and choose Light, Dark or "Use system setting".
 
 ---
 
@@ -181,7 +189,7 @@ You can customize these budgets in the Budget tab.
 
 ## 💾 Data Storage
 
-All your financial data is stored in a local SQLite database (`finance_data.db`). 
+All your financial data is stored in a local SQLite database (`finance_data.db`); accounts live in `users.db`. 
 
 **Key tables:**
 - `transactions` - All your income and expenses
@@ -219,9 +227,7 @@ cp finance_data.db finance_data.db.backup
 ## 📈 Future Enhancements
 
 Planned features for upcoming versions:
-- [ ] Dark mode / Theme customization
 - [ ] Recurring transaction templates
-- [ ] Custom categories
 - [ ] CSV import for historical data
 - [ ] Advanced financial reports (PDF export)
 - [ ] Multi-currency support
@@ -233,9 +239,8 @@ Planned features for upcoming versions:
 ## 🐛 Known Issues
 
 Currently known limitations:
-- Data is stored in browser session memory unless explicitly saved
 - Limited to single-currency (EUR)
-- No built-in password protection
+- Local-only accounts (no password reset)
 
 ---
 

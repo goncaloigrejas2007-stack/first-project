@@ -13,7 +13,6 @@ from auth_manager import (
     register_user,
     update_user_settings,
 )
-from llm_manager import get_llm_manager
 
 DB_PATH = Path(__file__).resolve().parent / "finance_data.db"
 DEFAULT_BUDGETS = {
@@ -377,8 +376,10 @@ st.markdown(
     """
     <style>
     .block-container { padding-top: 1.5rem; }
-    .stMetric { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px; }
-    .insight-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }
+    [data-testid="stMetric"] { background: var(--secondary-background-color); border: 1px solid rgba(128, 128, 128, 0.35); border-radius: 10px; padding: 12px 16px; }
+    [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { color: var(--text-color); font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
+    [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * { color: var(--text-color); opacity: 0.8; }
+    .insight-box { background: rgba(255, 193, 7, 0.18); color: var(--text-color); border-left: 4px solid #ffc107; padding: 12px; border-radius: 5px; margin: 10px 0; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -390,8 +391,6 @@ init_db()
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
     st.session_state.username = ""
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
 
 
 def show_auth_page():
@@ -447,18 +446,16 @@ with st.sidebar:
 
     settings = get_user_settings(user_id)
     st.subheader("Settings")
-    theme = st.selectbox("Theme", ["light", "dark"], index=["light", "dark"].index(settings.get("theme", "light")))
-    llm_model = st.selectbox("AI model", ["groq"], index=0)
+    st.caption("Switch light/dark theme from the ⋮ menu → Settings → Theme.")
     notifications_enabled = st.checkbox("Enable notifications", value=bool(settings.get("notifications_enabled", 1)))
     if st.button("Save settings"):
-        update_user_settings(user_id, {"theme": theme, "llm_model": llm_model, "notifications_enabled": int(notifications_enabled)})
+        update_user_settings(user_id, {"notifications_enabled": int(notifications_enabled)})
         st.success("Settings saved")
 
     st.divider()
     if st.button("Logout"):
         st.session_state.user_id = None
         st.session_state.username = ""
-        st.session_state.chat_history = []
         st.rerun()
 
 st.title("💰 Personal Finance Dashboard Pro")
@@ -501,7 +498,7 @@ if not transactions_df.empty:
         st.markdown(f"<div class='insight-box'>{insight}</div>", unsafe_allow_html=True)
 
 st.divider()
-overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab, ai_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions", "AI Assistant"])
+overview_tab, analytics_tab, budget_tab, savings_tab, transactions_tab = st.tabs(["Overview", "Analytics", "Budget", "Savings", "Transactions"])
 
 with overview_tab:
     st.subheader("📝 Recent transactions")
@@ -579,7 +576,7 @@ with budget_tab:
 
     budget_values = {}
     for _, row in budget_df.iterrows():
-        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", value=float(row["value"]), step=10, key=f"budget_{user_id}_{row['category']}")
+        budget_values[row["category"]] = st.number_input(f"{row['category']} (€)", value=float(row["value"]), step=10.0, key=f"budget_{user_id}_{row['category']}")
 
     if st.button("💾 Save budget"):
         for category, value in budget_values.items():
@@ -656,7 +653,7 @@ with savings_tab:
     st.subheader("Create new goal")
     with st.form("goal_form", clear_on_submit=True):
         goal_name = st.text_input("Goal name")
-        goal_target = st.number_input("Target (€)", min_value=0.0, step=50.0)
+        goal_target = st.number_input("Target (€)", min_value=0.0, value=0.0, step=50.0)
         goal_description = st.text_input("Description (optional)")
         if st.form_submit_button("Add goal"):
             if goal_name.strip():
@@ -673,7 +670,7 @@ with savings_tab:
     else:
         with st.form("goal_contribution_form"):
             selected_goal = st.selectbox("Choose goal", goals_for_contribution["name"].tolist())
-            contribution = st.number_input("Contribution (€)", min_value=0.0, step=10.0)
+            contribution = st.number_input("Contribution (€)", min_value=0.0, value=0.0, step=10.0)
             if st.form_submit_button("Add to goal"):
                 goal_id = int(goals_for_contribution.loc[goals_for_contribution["name"] == selected_goal, "id"].iloc[0])
                 if contribution > 0:
@@ -777,17 +774,20 @@ with st.sidebar:
     with st.form("transaction_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
-            amount = st.number_input("Amount (€)", min_value=0.0, step=0.01)
+            amount = st.number_input("Amount (€)", min_value=0.0, value=0.0, step=0.01)
         with c2:
             category_options = get_all_categories(user_id)
             category = st.selectbox("Category", category_options)
         description = st.text_input("Description")
         date_value = st.date_input("Date", datetime.now())
         submitted = st.form_submit_button("💾 Save transaction")
-        if submitted and amount > 0:
-            save_transaction(user_id, amount, category, description, date_value)
-            st.sidebar.success("Transaction saved!")
-            st.rerun()
+        if submitted:
+            if amount <= 0:
+                st.warning("Enter an amount greater than 0.")
+            else:
+                save_transaction(user_id, amount, category, description, date_value)
+                st.toast("Transaction saved!", icon="✅")
+                st.rerun()
 
     with st.expander("🏷️ Manage categories"):
         new_category = st.text_input("New category")
@@ -799,39 +799,10 @@ with st.sidebar:
                 st.success("Category added.")
                 st.rerun()
 
-with ai_tab:
-    st.subheader("🤖 Financial AI assistant")
-    llm = get_llm_manager()
-    if llm is None:
-        st.warning("Configure GROQ_API_KEY in environment variables or .env to enable AI assistant.")
-    else:
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        prompt = st.chat_input("Ask anything about your finances...")
-        if prompt:
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            finance_data = {
-                "total_spending": total_spending,
-                "total_income": total_income,
-                "monthly_spending": month_spending,
-                "category_breakdown": expense_df.groupby("category")["amount"].sum().to_dict() if not expense_df.empty else {},
-            }
-            response = llm.get_financial_advice(finance_data)
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
-            with st.chat_message("assistant"):
-                st.markdown(response)
-
 st.divider()
 st.markdown(
     """
-    <div style='text-align: center; color: #888; font-size: 12px;'>
+    <div style='text-align: center; opacity: 0.7; font-size: 12px;'>
     💰 Finance Dashboard Pro | Personal private account | Made with ❤️ using Streamlit
     </div>
     """,
