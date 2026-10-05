@@ -142,12 +142,10 @@ The app will automatically open at `http://localhost:8501`
 ```
 first-project/
 ├── streamlit_app.py          # Main application
+├── auth_manager.py           # Login / registration (SQLite + bcrypt)
 ├── requirements.txt          # Python dependencies
-├── finance_data.db          # SQLite database (auto-generated)
-├── README.md                # Documentation
-├── .gitignore               # Git ignore rules
-└── .github/                 # GitHub configuration
-    └── ISSUE_TEMPLATE/      # Issue templates
+├── finance_data.db           # SQLite database (auto-generated)
+└── users.db                  # Users database (auto-generated)
 ```
 
 ---
@@ -161,7 +159,7 @@ first-project/
 | **Pandas** | Data manipulation and analysis |
 | **SQLite3** | Local database |
 | **Altair** | Interactive data visualizations |
-| **NumPy** | Numerical computations |
+| **bcrypt** | Password hashing |
 
 ---
 

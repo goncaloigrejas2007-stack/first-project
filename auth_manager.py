@@ -90,7 +90,7 @@ def register_user(username: str, email: str, password: str) -> dict:
         conn = sqlite3.connect(DB_PATH)
         password_hash = hash_password(password)
 
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO users (username, email, password_hash, created_at)
             VALUES (?, ?, ?, ?)
@@ -98,7 +98,7 @@ def register_user(username: str, email: str, password: str) -> dict:
             (username, email, password_hash, datetime.now().isoformat()),
         )
 
-        user_id = conn.lastrowid
+        user_id = cursor.lastrowid
 
         # Add default settings
         conn.execute(
