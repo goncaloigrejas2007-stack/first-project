@@ -219,7 +219,6 @@ cp finance_data.db finance_data.db.backup
 ## 📈 Future Enhancements
 
 Planned features for upcoming versions:
-- [ ] Dark mode / Theme customization
 - [ ] Recurring transaction templates
 - [ ] Custom categories
 - [ ] CSV import for historical data
